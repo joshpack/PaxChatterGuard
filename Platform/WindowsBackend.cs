@@ -1,0 +1,476 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
+using PaxChatterGuard.Core;
+
+namespace PaxChatterGuard.Platform;
+
+/// <summary>
+/// Windows: a low-level keyboard hook (WH_KEYBOARD_LL) on its own thread with its own message loop. The hook callback does
+/// almost nothing but ask the engine, because Windows silently drops a hook that answers too slowly. A watchdog checks the
+/// hook is still alive and reinstalls it if it isn't.
+/// </summary>
+[SupportedOSPlatform("windows")]
+public sealed unsafe class WindowsBackend : IKeyboardBackend
+{
+    private const int WH_KEYBOARD_LL = 13;
+    private const int HC_ACTION = 0;
+    private const int WM_KEYDOWN = 0x0100;
+    private const int WM_SYSKEYDOWN = 0x0104;
+    private const uint WM_QUIT = 0x0012;
+    private const uint WM_REINSTALL = 0x8001;
+    private const uint LLKHF_EXTENDED = 0x01;
+    private const uint LLKHF_INJECTED = 0x10;
+
+    // Markers we put in dwExtraInfo of the keystrokes we create ourselves, so the hook knows them when they come back.
+    private const long SelfTestMagic = 0x50415832;  // simulated chatter
+    private const long ProbeMagic = 0x50415833;     // watchdog heartbeat
+
+    private ChatterEngine? _engine;
+    private Thread? _hookThread;
+    private Thread? _watchdogThread;
+    private volatile bool _running;
+    private uint _hookThreadId;
+    private IntPtr _hook;
+    private HookProc? _proc;
+    private long _lastProbeSeen;
+    private readonly ManualResetEventSlim _ready = new(false);
+    private string? _startError;
+
+    // Which physical keyboard is typing: Raw Input names the device, the hook (which can block keys) can't. The hook runs
+    // just before the matching Raw Input message arrives, so each key is attributed to the keyboard that sent the previous one.
+    private volatile string? _lastDevice;
+    private readonly ConcurrentDictionary<IntPtr, string> _handleToId = new();
+    private readonly ConcurrentDictionary<string, KeyboardDevice> _seen = new();
+    private WndProcDelegate? _wndProc;
+    private IntPtr _rawWindow;
+
+    public string Name => "Windows keyboard hook";
+    public bool IsRunning => _running;
+    public string? SetupHint => null;
+    public IReadOnlyList<KeyboardDevice> Devices => Array.Empty<KeyboardDevice>();
+    public IReadOnlyList<KeyboardDevice> Seen => _seen.Values.OrderBy(d => d.Name).ToList();
+    public event Action<string>? Notice;
+
+    public void SetDeviceFilter(IReadOnlyCollection<string>? names) { }
+
+    public string? Start(ChatterEngine engine)
+    {
+        if (_running)
+            return null;
+
+        _engine = engine;
+        _startError = null;
+        _ready.Reset();
+        _running = true;
+
+        _hookThread = new Thread(HookThreadMain) { IsBackground = true, Name = "Chatter hook", Priority = ThreadPriority.Highest };
+        _hookThread.Start();
+        if (!_ready.Wait(4000))
+            _startError ??= "The keyboard hook did not start in time.";
+
+        if (_startError is not null)
+        {
+            _running = false;
+            return _startError;
+        }
+
+        _watchdogThread = new Thread(WatchdogMain) { IsBackground = true, Name = "Chatter watchdog" };
+        _watchdogThread.Start();
+        return null;
+    }
+
+    public void Stop()
+    {
+        if (!_running)
+            return;
+
+        _running = false;
+        if (_hookThreadId != 0)
+            PostThreadMessage(_hookThreadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
+        _hookThread?.Join(1500);
+        _watchdogThread?.Join(500);
+    }
+
+    public void Dispose() => Stop();
+
+    // ---- The hook ------------------------------------------------------------------------------------------------
+
+    private void HookThreadMain()
+    {
+        _hookThreadId = GetCurrentThreadId();
+        _proc = HookCallback;
+        if (!Install())
+        {
+            _startError = $"Windows refused to install the keyboard hook (error {Marshal.GetLastWin32Error()}).";
+            _ready.Set();
+            return;
+        }
+
+        CreateRawInputWindow();
+        _ready.Set();
+        while (GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+        {
+            if (msg.message == WM_REINSTALL)
+            {
+                if (_hook != IntPtr.Zero)
+                    UnhookWindowsHookEx(_hook);
+                _hook = IntPtr.Zero;
+                Install();
+                continue;
+            }
+
+            TranslateMessage(ref msg);
+            DispatchMessage(ref msg);
+        }
+
+        if (_rawWindow != IntPtr.Zero)
+            DestroyWindow(_rawWindow);
+        _rawWindow = IntPtr.Zero;
+        if (_hook != IntPtr.Zero)
+            UnhookWindowsHookEx(_hook);
+        _hook = IntPtr.Zero;
+    }
+
+    // ---- Raw Input: which keyboard ---------------------------------------------------------------------------------
+
+    private void CreateRawInputWindow()
+    {
+        try
+        {
+            _wndProc = RawWndProc;
+            var cls = new WNDCLASS { lpfnWndProc = _wndProc, hInstance = GetModuleHandle(null), lpszClassName = "PaxChatterGuardRaw" };
+            RegisterClass(ref cls);
+            _rawWindow = CreateWindowEx(0, "PaxChatterGuardRaw", "", 0, 0, 0, 0, 0, new IntPtr(-3) /* HWND_MESSAGE */, IntPtr.Zero, cls.hInstance, IntPtr.Zero);
+            if (_rawWindow == IntPtr.Zero)
+                return;
+
+            var rid = new RAWINPUTDEVICE { usUsagePage = 1, usUsage = 6, dwFlags = 0x100 /* RIDEV_INPUTSINK */, hwndTarget = _rawWindow };
+            RegisterRawInputDevices(&rid, 1, (uint)sizeof(RAWINPUTDEVICE));
+        }
+        catch
+        {
+            /* without it everything still works, just not per keyboard */
+        }
+    }
+
+    private IntPtr RawWndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
+    {
+        if (msg == 0x00FF /* WM_INPUT */)
+        {
+            try
+            {
+                RAWINPUTHEADER header;
+                var size = (uint)sizeof(RAWINPUTHEADER);
+                if (GetRawInputData(lParam, 0x10000005 /* RID_HEADER */, &header, ref size, (uint)sizeof(RAWINPUTHEADER)) != unchecked((uint)-1)
+                    && header.hDevice != IntPtr.Zero)
+                    _lastDevice = IdOf(header.hDevice);
+            }
+            catch
+            {
+                /* ignore */
+            }
+        }
+
+        return DefWindowProc(hwnd, msg, wParam, lParam);
+    }
+
+    private string? IdOf(IntPtr handle)
+    {
+        if (_handleToId.TryGetValue(handle, out var known))
+            return known;
+
+        uint len = 0;
+        GetRawInputDeviceInfo(handle, 0x20000007 /* RIDI_DEVICENAME */, null, ref len);
+        if (len == 0)
+            return null;
+        var sb = new StringBuilder((int)len);
+        GetRawInputDeviceInfo(handle, 0x20000007, sb, ref len);
+        var path = sb.ToString();
+
+        // One model shows up as several devices (one per interface), so identify it by vendor and product.
+        var m = Regex.Match(path, @"VID_([0-9A-Fa-f]{4})&PID_([0-9A-Fa-f]{4})");
+        var id = m.Success ? $"{m.Groups[1].Value}:{m.Groups[2].Value}".ToUpperInvariant() : "builtin";
+        var name = ProductName(path) ?? (m.Success ? "Keyboard" : "Built-in keyboard");
+        var label = m.Success ? $"{name} ({id})" : name;
+
+        _handleToId[handle] = id;
+        _seen.AddOrUpdate(id, _ => new KeyboardDevice(label, id), (_, old) => old.Name.StartsWith("Keyboard (", StringComparison.Ordinal) ? new KeyboardDevice(label, id) : old);
+        return id;
+    }
+
+    private static string? ProductName(string devicePath)
+    {
+        try
+        {
+            using var h = CreateFile(devicePath, 0, 3, IntPtr.Zero, 3, 0, IntPtr.Zero);
+            if (h.IsInvalid)
+                return null;
+            var buf = new StringBuilder(256);
+            return HidD_GetProductString(h, buf, 512) && buf.Length > 0 ? buf.ToString().Trim() : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private bool Install()
+    {
+        _hook = SetWindowsHookEx(WH_KEYBOARD_LL, _proc!, GetModuleHandle(null), 0);
+        Volatile.Write(ref _lastProbeSeen, Stopwatch.GetTimestamp());
+        return _hook != IntPtr.Zero;
+    }
+
+    private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode == HC_ACTION)
+        {
+            try
+            {
+                var kb = (KBDLLHOOKSTRUCT*)lParam;
+                var extra = (long)kb->dwExtraInfo;
+
+                if (extra == ProbeMagic)
+                {
+                    Volatile.Write(ref _lastProbeSeen, Stopwatch.GetTimestamp());
+                    return (IntPtr)1; // the heartbeat never reaches any program
+                }
+
+                // Scancode 0 / VK_PACKET are text injected by input methods and on-screen keyboards, not key switches.
+                if (kb->scanCode != 0 && kb->vkCode != 0xE7)
+                {
+                    var msg = (int)wParam;
+                    var down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+                    var key = (int)kb->scanCode | ((kb->flags & LLKHF_EXTENDED) != 0 ? 0xE000 : 0);
+                    var injected = (kb->flags & LLKHF_INJECTED) != 0;
+
+                    if (_engine!.OnKey(new KeyEvent(key, down, NowMicros(), injected, extra == SelfTestMagic, _lastDevice)) == Verdict.Block)
+                        return (IntPtr)1;
+                }
+            }
+            catch
+            {
+                // Never let an error escape into Windows; letting the key through is always the safe choice.
+            }
+        }
+
+        return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+    }
+
+    // ---- Watchdog ------------------------------------------------------------------------------------------------
+
+    private void WatchdogMain()
+    {
+        while (_running)
+        {
+            for (var i = 0; i < 300 && _running; i++)
+                Thread.Sleep(100); // every 30 s
+            if (!_running)
+                return;
+
+            var before = Volatile.Read(ref _lastProbeSeen);
+            SendKey(0x76, down: false, ProbeMagic); // a release of F24 with no press: nothing ever reacts to it
+            for (var i = 0; i < 10 && Volatile.Read(ref _lastProbeSeen) == before; i++)
+                Thread.Sleep(50);
+
+            if (Volatile.Read(ref _lastProbeSeen) == before && _running)
+            {
+                Notice?.Invoke("Windows removed the keyboard hook; it was reinstalled.");
+                PostThreadMessage(_hookThreadId, WM_REINSTALL, IntPtr.Zero, IntPtr.Zero);
+            }
+        }
+    }
+
+    // ---- Self-test -----------------------------------------------------------------------------------------------
+
+    public bool SendSelfTest(int key, int gapMs)
+    {
+        if (!_running)
+            return false;
+
+        _ = Task.Run(() =>
+        {
+            SendKey(key, down: true, SelfTestMagic);
+            Thread.Sleep(30);
+            SendKey(key, down: false, SelfTestMagic);
+            Thread.Sleep(Math.Max(1, gapMs));
+            SendKey(key, down: true, SelfTestMagic);
+            Thread.Sleep(25);
+            SendKey(key, down: false, SelfTestMagic);
+        });
+        return true;
+    }
+
+    // ---- Helpers -------------------------------------------------------------------------------------------------
+
+    private static long NowMicros() => Stopwatch.GetTimestamp() * 1_000_000L / Stopwatch.Frequency;
+
+    private static void SendKey(int key, bool down, long magic)
+    {
+        const uint KEYEVENTF_EXTENDEDKEY = 0x1, KEYEVENTF_KEYUP = 0x2, KEYEVENTF_SCANCODE = 0x8;
+        var input = new INPUT
+        {
+            type = 1,
+            u = new INPUTUNION
+            {
+                ki = new KEYBDINPUT
+                {
+                    wVk = 0,
+                    wScan = (ushort)(key & 0xFF),
+                    dwFlags = KEYEVENTF_SCANCODE | (down ? 0u : KEYEVENTF_KEYUP) | ((key & 0xE000) != 0 ? KEYEVENTF_EXTENDEDKEY : 0u),
+                    time = 0,
+                    dwExtraInfo = (UIntPtr)(ulong)magic,
+                },
+            },
+        };
+        SendInput(1, &input, sizeof(INPUT));
+    }
+
+    // ---- Native interop ------------------------------------------------------------------------------------------
+
+    private delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KBDLLHOOKSTRUCT
+    {
+        public uint vkCode;
+        public uint scanCode;
+        public uint flags;
+        public uint time;
+        public UIntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public UIntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public int dx, dy;
+        public uint mouseData, dwFlags, time;
+        public UIntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct INPUTUNION
+    {
+        [FieldOffset(0)] public MOUSEINPUT mi;
+        [FieldOffset(0)] public KEYBDINPUT ki;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT
+    {
+        public uint type;
+        public INPUTUNION u;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MSG
+    {
+        public IntPtr hwnd;
+        public uint message;
+        public UIntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public int x, y;
+    }
+
+    private delegate IntPtr WndProcDelegate(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct WNDCLASS
+    {
+        public uint style;
+        public WndProcDelegate lpfnWndProc;
+        public int cbClsExtra, cbWndExtra;
+        public IntPtr hInstance, hIcon, hCursor, hbrBackground;
+        public string? lpszMenuName;
+        public string lpszClassName;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RAWINPUTDEVICE
+    {
+        public ushort usUsagePage, usUsage;
+        public uint dwFlags;
+        public IntPtr hwndTarget;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RAWINPUTHEADER
+    {
+        public uint dwType, dwSize;
+        public IntPtr hDevice, wParam;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern ushort RegisterClass(ref WNDCLASS lpWndClass);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateWindowEx(uint exStyle, string cls, string title, uint style, int x, int y, int w, int h,
+        IntPtr parent, IntPtr menu, IntPtr instance, IntPtr param);
+
+    [DllImport("user32.dll")]
+    private static extern bool DestroyWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr DefWindowProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool RegisterRawInputDevices(RAWINPUTDEVICE* devices, uint count, uint size);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetRawInputData(IntPtr hRawInput, uint command, RAWINPUTHEADER* data, ref uint size, uint headerSize);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern uint GetRawInputDeviceInfo(IntPtr device, uint command, StringBuilder? data, ref uint size);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr security,
+        uint disposition, uint flags, IntPtr template);
+
+    [DllImport("hid.dll", CharSet = CharSet.Unicode)]
+    private static extern bool HidD_GetProductString(Microsoft.Win32.SafeHandles.SafeFileHandle h, StringBuilder buffer, int length);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, HookProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+    [DllImport("user32.dll")]
+    private static extern bool TranslateMessage(ref MSG lpMsg);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr DispatchMessage(ref MSG lpMsg);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool PostThreadMessage(uint idThread, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint nInputs, INPUT* pInputs, int cbSize);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr GetModuleHandle(string? lpModuleName);
+}

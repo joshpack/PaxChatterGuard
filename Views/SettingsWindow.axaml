@@ -1,0 +1,168 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PaxChatterGuard.Views.SettingsWindow"
+        Title="PAX Chatter Guard"
+        Width="500" Height="720" MinWidth="440" MinHeight="520"
+        WindowStartupLocation="CenterScreen">
+
+  <Grid RowDefinitions="Auto,*" Margin="22,20,22,20">
+
+    <!-- Header -->
+    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,16">
+      <Border Width="38" Height="38" CornerRadius="10" BoxShadow="0 0 18 0 #6600C8FF, 0 0 30 3 #3319F58C">
+        <Border.Background>
+          <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+            <GradientStop Color="#00C8FF" Offset="0" />
+            <GradientStop Color="#19F58C" Offset="1" />
+          </LinearGradientBrush>
+        </Border.Background>
+        <Viewbox Margin="9">
+          <Path x:Name="Spade" Fill="#04140C" Width="100" Height="100" Stretch="Uniform" />
+        </Viewbox>
+      </Border>
+      <TextBlock Grid.Column="1" Text="PAX Chatter Guard" FontSize="18" FontWeight="Bold" Classes="neon"
+                 VerticalAlignment="Center" Margin="12,0,0,0" />
+      <Border x:Name="StatusPill" Grid.Column="2" CornerRadius="999" Padding="11,5" VerticalAlignment="Center"
+              Background="#0C2A1D" BorderBrush="#146B44" BorderThickness="1">
+        <StackPanel Orientation="Horizontal" Spacing="7">
+          <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="#19F58C" VerticalAlignment="Center" />
+          <TextBlock x:Name="StatusText" Text="On" FontWeight="SemiBold" FontSize="12" />
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Spacing="12" Margin="0,0,12,0">
+
+        <Border x:Name="ProblemCard" Classes="card" IsVisible="False" Background="#2A2210" BorderBrush="#7A5A1A" Padding="14">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <TextBlock x:Name="ProblemText" TextWrapping="Wrap" Foreground="#F5C97A" VerticalAlignment="Center" FontSize="12" />
+            <Button x:Name="RetryButton" Grid.Column="1" Content="Retry" />
+          </Grid>
+        </Border>
+
+        <Border x:Name="KbCard" Classes="card" Padding="16" IsVisible="False">
+          <StackPanel Spacing="8">
+            <TextBlock Text="KEYBOARD" Classes="label" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <ComboBox x:Name="KbBox" HorizontalAlignment="Stretch" MinHeight="34" Padding="10,4" />
+              <Button x:Name="KbResetButton" Grid.Column="1" Content="Use default" MinHeight="34" IsVisible="False" />
+            </Grid>
+            <Grid x:Name="KbOnRow" ColumnDefinitions="*,Auto" IsVisible="False">
+              <TextBlock Text="Filter this keyboard" VerticalAlignment="Center" />
+              <ToggleSwitch x:Name="KbOnSwitch" Grid.Column="1" OnContent="" OffContent="" />
+            </Grid>
+            <TextBlock x:Name="KbNote" Classes="muted" FontSize="11" TextWrapping="Wrap"
+                       Text="Every setting below (sensitivity, exceptions, caught keys) applies to the keyboard chosen here. A keyboard that has never been changed follows All keyboards." />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Padding="16">
+          <StackPanel Spacing="12">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="1">
+                <TextBlock Text="Filter keyboard chatter" FontWeight="SemiBold" FontSize="14" />
+                <TextBlock Text="Drops accidental double presses before any program sees them" Classes="muted" FontSize="11" />
+              </StackPanel>
+              <ToggleSwitch x:Name="FilterSwitch" Grid.Column="1" OnContent="" OffContent="" VerticalAlignment="Center" />
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="SENSITIVITY" Classes="label" VerticalAlignment="Center" />
+              <TextBlock x:Name="MsText" Grid.Column="1" Foreground="#19F58C" FontWeight="Bold" />
+            </Grid>
+            <Slider x:Name="MsSlider" Minimum="5" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" />
+            <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                       Text="A press is dropped if the same key was let go less than this long ago. Real fast typing leaves about 50 ms; chatter about 10. 25–40 ms suits most keyboards." />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Padding="16">
+          <StackPanel Spacing="8">
+            <TextBlock Text="CAUGHT KEYS" Classes="label" />
+            <TextBlock x:Name="CaughtNote" Classes="muted" FontSize="11" TextWrapping="Wrap"
+                       Text="Keys that were blocked, or re-pressed so quickly that they came close, since the app started. If a doubled letter slipped through, set that key's delay just above its closest gap." />
+            <StackPanel x:Name="CaughtList" Spacing="6" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Padding="16">
+          <StackPanel Spacing="10">
+            <TextBlock Text="EXCEPTIONS" Classes="label" />
+            <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                       Text="Give one key its own sensitivity, or 0 to never filter it (handy for a key you tap fast on purpose)." />
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+              <ComboBox x:Name="KeyBox" HorizontalAlignment="Stretch" MinHeight="34" Padding="10,4" PlaceholderText="Choose a key…" />
+              <NumericUpDown x:Name="NewMs" Grid.Column="1" Minimum="0" Maximum="250" Value="60" FormatString="0" MinHeight="34" Width="130" />
+              <Button x:Name="AddButton" Grid.Column="2" Content="Add" MinHeight="34" Padding="14,4" />
+            </Grid>
+            <StackPanel x:Name="RulesList" Spacing="6" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Padding="16">
+          <StackPanel Spacing="12">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="Also filter Shift, Ctrl, Alt and Win" VerticalAlignment="Center" />
+              <ToggleSwitch x:Name="ModifiersSwitch" Grid.Column="1" OnContent="" OffContent="" />
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="1" VerticalAlignment="Center">
+                <TextBlock Text="Auto-adjust delays" />
+                <TextBlock Text="When a key double-types, raise its delay just above that gap, up to the limit" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+              </StackPanel>
+              <ToggleSwitch x:Name="AutoSwitch" Grid.Column="1" OnContent="" OffContent="" />
+            </Grid>
+            <Grid x:Name="AutoLimitRow" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+              <TextBlock Text="Never go above" VerticalAlignment="Center" Classes="muted" />
+              <NumericUpDown x:Name="AutoMax" Grid.Column="1" Minimum="10" Maximum="100" FormatString="0" Width="130" MinHeight="32" />
+              <TextBlock Grid.Column="2" Text="ms" VerticalAlignment="Center" Classes="muted" />
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="1" VerticalAlignment="Center">
+                <TextBlock Text="Hotkey: Ctrl + Alt + Shift + F9" />
+                <TextBlock Text="Turns filtering on or off from anywhere" Classes="muted" FontSize="11" />
+              </StackPanel>
+              <ToggleSwitch x:Name="HotkeySwitch" Grid.Column="1" OnContent="" OffContent="" />
+            </Grid>
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="1" VerticalAlignment="Center">
+                <TextBlock Text="Start when I sign in" />
+                <TextBlock x:Name="AutostartNote" Text="Runs quietly in the tray" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+              </StackPanel>
+              <ToggleSwitch x:Name="AutostartSwitch" Grid.Column="1" OnContent="" OffContent="" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="DevicesCard" Classes="card" Padding="16" IsVisible="False">
+          <StackPanel Spacing="8">
+            <TextBlock Text="KEYBOARDS" Classes="label" />
+            <TextBlock Classes="muted" FontSize="11" Text="Untick any keyboard that should be left alone." />
+            <StackPanel x:Name="DeviceList" Spacing="2" />
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="SetupCard" Classes="card" Padding="16" IsVisible="False">
+          <StackPanel Spacing="8">
+            <TextBlock Text="SETUP" Classes="label" />
+            <TextBox x:Name="SetupText" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="110" FontSize="12" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Padding="16">
+          <StackPanel Spacing="10">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="TRY IT" Classes="label" VerticalAlignment="Center" />
+              <TextBlock x:Name="BlockedText" Grid.Column="1" Classes="muted" FontSize="11" />
+            </Grid>
+            <TextBox x:Name="TestPad" PlaceholderText="Click here, then press the button" MinHeight="38" />
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+              <Button x:Name="TestButton" Content="Simulate a bounce" />
+              <TextBlock x:Name="TestResult" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" Foreground="#C9CFDB" />
+            </Grid>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</Window>
