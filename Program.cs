@@ -15,6 +15,12 @@ internal static class Program
     /// </summary>
     public static int SafeTestSeconds { get; private set; }
 
+    /// <summary>
+    /// --restarted: started by "Restart as administrator". The copy that started it is closing, so wait for it to let go of
+    /// the single-instance lock instead of giving up at once.
+    /// </summary>
+    public static bool Restarted { get; private set; }
+
     [STAThread]
     public static void Main(string[] args)
     {
@@ -22,11 +28,13 @@ internal static class Program
         {
             if (args[i].Equals("--minimized", StringComparison.OrdinalIgnoreCase))
                 StartMinimized = true;
+            else if (args[i].Equals("--restarted", StringComparison.OrdinalIgnoreCase))
+                Restarted = true;
             else if (args[i].Equals("--safe-test", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length && int.TryParse(args[i + 1], out var s))
                 SafeTestSeconds = s;
         }
 
-        if (!AcquireSingleInstance())
+        if (!AcquireSingleInstance(Restarted ? TimeSpan.FromSeconds(15) : TimeSpan.Zero))
             return;
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
@@ -43,18 +51,29 @@ internal static class Program
             .With(new X11PlatformOptions { RenderingMode = new[] { X11RenderingMode.Software } })
             .LogToTrace();
 
-    /// <summary>Single-instance guard: an exclusively opened lock file (named mutexes aren't shared across processes on Linux/macOS).</summary>
-    private static bool AcquireSingleInstance()
+    /// <summary>
+    /// Single-instance guard: an exclusively opened lock file (named mutexes aren't shared across processes on Linux/macOS).
+    /// Waits up to <paramref name="wait"/> for another copy to let go of it.
+    /// </summary>
+    private static bool AcquireSingleInstance(TimeSpan wait)
     {
-        try
+        var path = Path.Combine(Path.GetTempPath(), "PaxChatterGuard.instance.lock");
+        var until = DateTime.UtcNow + wait;
+        while (true)
         {
-            var path = Path.Combine(Path.GetTempPath(), "PaxChatterGuard.instance.lock");
-            _instanceLock = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-            return true;
-        }
-        catch (IOException)
-        {
-            return false;
+            try
+            {
+                _instanceLock = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                return true;
+            }
+            catch (IOException) when (DateTime.UtcNow < until)
+            {
+                Thread.Sleep(200);
+            }
+            catch (IOException)
+            {
+                return false;
+            }
         }
     }
 }

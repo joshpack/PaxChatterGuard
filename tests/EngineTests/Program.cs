@@ -453,5 +453,28 @@ Test("the built-in test doesn't count toward suggestions", () =>
     Eq(0L, k.ChatterMaxMicros, "no chatter data");
 });
 
+// ---- Start when I sign in, as administrator (the Windows task's definition; nothing is registered) ------------------------
+
+Test("the sign-in task starts the app as administrator at this user's sign-in, with no time limit", () =>
+{
+    const string exe = @"C:\Users\Zoë & Co\Apps\Pax <1>\PaxChatterGuard.exe";
+    var xml = PaxChatterGuard.Services.SignInTask.Xml("S-1-5-21-1-2-3-1001", @"PC\Zoë & Co", exe, "--minimized", @"C:\Users\Zoë & Co\Apps\Pax <1>\");
+    var doc = System.Xml.Linq.XDocument.Parse(xml); // throws if the escaping is off
+    System.Xml.Linq.XNamespace t = "http://schemas.microsoft.com/windows/2004/02/mit/task";
+    string At(params string[] path) => path.Aggregate(doc.Root!, (e, name) => e.Element(t + name) ?? throw new Exception($"no {name}")).Value;
+
+    Eq("HighestAvailable", At("Principals", "Principal", "RunLevel"), "run level");
+    Eq("InteractiveToken", At("Principals", "Principal", "LogonType"), "logon type");
+    Eq("S-1-5-21-1-2-3-1001", At("Principals", "Principal", "UserId"), "runs as");
+    Eq(@"PC\Zoë & Co", At("Triggers", "LogonTrigger", "UserId"), "whose sign-in");
+    Eq(exe, At("Actions", "Exec", "Command"), "program");
+    Eq("--minimized", At("Actions", "Exec", "Arguments"), "arguments");
+    Eq("PT0S", At("Settings", "ExecutionTimeLimit"), "no time limit");
+    Eq("false", At("Settings", "DisallowStartIfOnBatteries"), "starts on battery");
+    Eq("false", At("Settings", "StopIfGoingOnBatteries"), "keeps running on battery");
+    Eq("IgnoreNew", At("Settings", "MultipleInstancesPolicy"), "one copy");
+    Eq("4", At("Settings", "Priority"), "normal priority");
+});
+
 Console.WriteLine($"{passed} passed, {failures} failed");
 return failures == 0 ? 0 : 1;

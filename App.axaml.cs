@@ -68,14 +68,45 @@ public partial class App : Application
         var quit = new NativeMenuItem("Quit");
         quit.Click += (_, _) => Quit();
 
+        var menu = new NativeMenu { open, monitor, _toggleItem };
+        if (OperatingSystem.IsWindows() && !Elevation.IsElevated)
+        {
+            // Programs that run as administrator can only be filtered by a copy that runs as administrator too.
+            var admin = new NativeMenuItem("Restart as administrator");
+            admin.Click += async (_, _) => await RestartAsAdminAsync();
+            menu.Add(admin);
+        }
+
+        menu.Add(new NativeMenuItemSeparator());
+        menu.Add(quit);
+
         _tray = new TrayIcon
         {
             Icon = _onIcon,
             ToolTipText = "PAX Chatter Guard",
-            Menu = new NativeMenu { open, monitor, _toggleItem, new NativeMenuItemSeparator(), quit },
+            Menu = menu,
         };
         _tray.Clicked += (_, _) => OpenSettings();
         TrayIcon.SetIcons(this, new TrayIcons { _tray });
+    }
+
+    /// <summary>
+    /// Windows: starts a copy that runs as administrator (Windows asks first), then quits this one, so programs that run as
+    /// administrator get filtered too. The new copy waits for this one to let go of the single-instance lock. Returns null
+    /// once it restarted, otherwise why not.
+    /// </summary>
+    private async Task<string?> RestartAsAdminAsync()
+    {
+        if (Autostart.LaunchTarget() is not { } target)
+            return "Not restarted: can't tell how this app was started.";
+
+        var args = (target.Args + " --restarted").TrimStart();
+        var error = await Task.Run(() => OperatingSystem.IsWindows() ? Elevation.RunElevated(target.Exe, args) : "only Windows needs that");
+        if (error is not null)
+            return $"Not restarted: {error}.";
+
+        Quit();
+        return null;
     }
 
     /// <summary>Opens the settings window, creating it only now; closing it frees it again.</summary>
@@ -87,7 +118,7 @@ public partial class App : Application
             return;
         }
 
-        _window = new SettingsWindow(_svc) { OpenMonitor = OpenMonitor };
+        _window = new SettingsWindow(_svc) { OpenMonitor = OpenMonitor, RestartAsAdmin = RestartAsAdminAsync };
         _window.Closed += (_, _) =>
         {
             _window = null;
@@ -126,9 +157,10 @@ public partial class App : Application
     private void UpdateTray()
     {
         _toggleItem.IsChecked = _svc.Settings.Enabled;
-        _tray.ToolTipText = $"PAX Chatter Guard — {_svc.StatusText}";
+        var name = OperatingSystem.IsWindows() && Elevation.IsElevated ? "PAX Chatter Guard (administrator)" : "PAX Chatter Guard";
+        _tray.ToolTipText = $"{name} — {_svc.StatusText}";
 
-        // The tray icon dims when nothing is being filtered.
+        // The tray icon dims when nothing is being filtered (also while a program out of reach is in front).
         var active = _svc.IsFiltering;
         if (active != _lastActive)
         {

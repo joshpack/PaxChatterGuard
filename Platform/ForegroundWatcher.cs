@@ -6,9 +6,10 @@ using System.Text;
 namespace PaxChatterGuard.Platform;
 
 /// <summary>
-/// Windows: tells which program is in front, so filtering can pause for the programs on the pause list. It listens for
-/// the system's "foreground window changed" event (no polling, nothing per keystroke). Create and use it on the UI thread:
-/// the events arrive through that thread's message loop.
+/// Windows: tells which program is in front, so filtering can pause for the programs on the pause list, and whether it runs
+/// as administrator while this app doesn't (Windows then keeps the keys typed into it from the hook). It listens for the
+/// system's "foreground window changed" event (no polling, nothing per keystroke). Create and use it on the UI thread: the
+/// events arrive through that thread's message loop.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class ForegroundWatcher : IDisposable
@@ -18,10 +19,19 @@ public sealed class ForegroundWatcher : IDisposable
 
     private WinEventProc? _proc;
     private IntPtr _hook;
-    private readonly Dictionary<uint, string?> _names = new();
+    private readonly Dictionary<uint, (string? Name, bool Elevated)> _seen = new();
+
+    // Running as administrator ourselves, every program's keys reach the hook, so there is nothing to check.
+    private readonly bool _checkElevation = !Elevation.IsElevated;
 
     /// <summary>The program in front, as an exe file name (e.g. "game.exe"), or null if unknown.</summary>
     public string? Current { get; private set; }
+
+    /// <summary>
+    /// The program in front runs as administrator and this app doesn't, so Windows keeps the keys typed into it from the
+    /// keyboard hook and they can't be filtered.
+    /// </summary>
+    public bool CurrentElevated { get; private set; }
 
     /// <summary>The program in front changed. Raised on the UI thread.</summary>
     public event Action? Changed;
@@ -46,27 +56,30 @@ public sealed class ForegroundWatcher : IDisposable
 
     private void Update(IntPtr hwnd)
     {
-        var name = NameOf(hwnd);
-        if (string.Equals(name, Current, StringComparison.OrdinalIgnoreCase))
+        var (name, elevated) = Lookup(hwnd);
+        if (string.Equals(name, Current, StringComparison.OrdinalIgnoreCase) && elevated == CurrentElevated)
             return;
         Current = name;
+        CurrentElevated = elevated;
         Changed?.Invoke();
     }
 
-    private string? NameOf(IntPtr hwnd)
+    /// <summary>The exe name of the window's program, and whether it runs as administrator while this app doesn't.</summary>
+    private (string? Name, bool Elevated) Lookup(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero)
-            return null;
+            return (null, false);
         GetWindowThreadProcessId(hwnd, out var pid);
         if (pid == 0)
-            return null;
+            return (null, false);
 
-        // Process ids are reused, but only after the process is gone; a stale name at worst pauses one window too few.
-        if (_names.Count > 256)
-            _names.Clear();
-        if (!_names.TryGetValue(pid, out var name))
-            _names[pid] = name = ExeName(pid);
-        return name;
+        // Process ids are reused, but only after the process is gone; a stale entry at worst gets one window wrong. A
+        // process can't change whether it runs as administrator, so that is looked up once per process too.
+        if (_seen.Count > 256)
+            _seen.Clear();
+        if (!_seen.TryGetValue(pid, out var found))
+            _seen[pid] = found = (ExeName(pid), _checkElevation && Elevation.IsProcessElevated(pid));
+        return found;
     }
 
     /// <summary>A process's exe file name. Limited query rights are enough, also for programs running as administrator.</summary>

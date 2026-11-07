@@ -50,6 +50,8 @@ public partial class SettingsWindow : Window
         _svc = svc;
         Icon = SpadeIcon.CreateWindowIcon();
         Ctl<Path>("Spade").Data = SpadeIcon.Geometry;
+        if (OperatingSystem.IsWindows() && Platform.Elevation.IsElevated)
+            Title = "PAX Chatter Guard (administrator)";
 
         Load();
         Wire();
@@ -76,6 +78,9 @@ public partial class SettingsWindow : Window
 
     /// <summary>Opens the chatter monitor (the app owns that window).</summary>
     public Action? OpenMonitor { get; init; }
+
+    /// <summary>Restarts the app as administrator (the app does that); null once it did, otherwise why not.</summary>
+    public Func<Task<string?>>? RestartAsAdmin { get; init; }
 
     private void OnLearned()
     {
@@ -109,7 +114,7 @@ public partial class SettingsWindow : Window
         Ctl<ToggleSwitch>("AutoSwitch").IsChecked = s.AutoAdjust;
         Ctl<NumericUpDown>("AutoMax").Value = s.AutoMaxMs;
         Ctl<Grid>("AutoLimitRow").IsVisible = s.AutoAdjust;
-        Ctl<ToggleSwitch>("AutostartSwitch").IsChecked = Autostart.IsEnabled();
+        ShowAutostart(null);
         Ctl<TextBlock>("BlockedText").Text = BlockedLine();
 
         var keys = Ctl<ComboBox>("KeyBox");
@@ -243,19 +248,25 @@ public partial class SettingsWindow : Window
         };
         svcLearned = () => { BuildRules(); _caughtRows.Clear(); Ctl<StackPanel>("CaughtList").Children.Clear(); };
 
-        Ctl<ToggleSwitch>("AutostartSwitch").IsCheckedChanged += (_, _) =>
+        Ctl<ToggleSwitch>("AutostartSwitch").IsCheckedChanged += async (_, _) =>
         {
-            if (_loading)
-                return;
-            try
-            {
-                Autostart.Set(Ctl<ToggleSwitch>("AutostartSwitch").IsChecked == true);
-            }
-            catch (Exception ex)
-            {
-                Ctl<TextBlock>("AutostartNote").Text = "Couldn't change that: " + ex.Message;
-            }
+            if (!_loading)
+                await ChangeAutostartAsync(Ctl<ToggleSwitch>("AutostartSwitch").IsChecked == true);
         };
+        Ctl<Button>("AutostartAdminButton").Click += async (_, _) => await ChangeAutostartAsync(true);
+
+        Ctl<Button>("AdminRestartButton").Click += async (_, _) =>
+        {
+            if (RestartAsAdmin is null)
+                return;
+            var button = Ctl<Button>("AdminRestartButton");
+            button.IsEnabled = false;
+            var error = await RestartAsAdmin(); // on success the app quits and this window with it
+            button.IsEnabled = true;
+            if (error is not null)
+                Ctl<TextBlock>("AdminNote").Text = error;
+        };
+        Ctl<Button>("AdminHideButton").Click += (_, _) => _svc.HideElevatedNotice();
 
         Ctl<ComboBox>("KbBox").SelectionChanged += (_, _) =>
         {
@@ -284,6 +295,46 @@ public partial class SettingsWindow : Window
         Ctl<Button>("TestButton").Click += async (_, _) => await RunTestAsync();
     }
 
+    /// <summary>Switches starting at sign-in, off the UI thread: removing a start as administrator can make Windows ask first.</summary>
+    private async Task ChangeAutostartAsync(bool on)
+    {
+        var toggle = Ctl<ToggleSwitch>("AutostartSwitch");
+        var admin = Ctl<Button>("AutostartAdminButton");
+        toggle.IsEnabled = admin.IsEnabled = false;
+        string? error = null;
+        try
+        {
+            await Task.Run(() => Autostart.Set(on));
+        }
+        catch (Exception ex)
+        {
+            error = "Couldn't change that: " + ex.Message;
+        }
+
+        toggle.IsEnabled = admin.IsEnabled = true;
+        ShowAutostart(error);
+    }
+
+    /// <summary>Shows how starting at sign-in is set up now (or why changing it didn't work).</summary>
+    private void ShowAutostart(string? error)
+    {
+        var mode = Autostart.Mode();
+        var elevated = OperatingSystem.IsWindows() && Platform.Elevation.IsElevated;
+        var was = _loading;
+        _loading = true;
+        Ctl<ToggleSwitch>("AutostartSwitch").IsChecked = mode != AutostartMode.Off;
+        _loading = was;
+
+        // Running as administrator, but set to start without those rights: offer to start as administrator instead.
+        Ctl<Button>("AutostartAdminButton").IsVisible = error is null && elevated && mode == AutostartMode.On;
+        Ctl<TextBlock>("AutostartNote").Text = error ?? (mode, elevated) switch
+        {
+            (AutostartMode.AsAdministrator, _) or (AutostartMode.Off, true) => "Runs quietly in the tray, as administrator, without asking",
+            (AutostartMode.On, true) => "Starts without administrator rights",
+            _ => "Runs quietly in the tray",
+        };
+    }
+
     private void Bind(string switchName, Action<bool> apply)
     {
         var sw = Ctl<ToggleSwitch>(switchName);
@@ -301,17 +352,29 @@ public partial class SettingsWindow : Window
     private void UpdateStatus()
     {
         var problem = _svc.Problem;
+        // A program that runs as administrator is in front, so nothing typed into it reaches the filter.
+        var outOfReach = problem is null && _svc.Engine.Enabled && _svc.PausedFor is null ? _svc.ElevatedFront : null;
         string pill, border, dot;
         if (problem is not null) { pill = "#33141A"; border = "#7A2A33"; dot = "#F2666A"; }
         else if (_svc.IsFiltering) { pill = "#0C2A1D"; border = "#146B44"; dot = "#19F58C"; }
-        else if (_svc.StatusText.StartsWith("Paused", StringComparison.Ordinal)) { pill = "#33260F"; border = "#5C4515"; dot = "#F5B14C"; }
+        else if (outOfReach is not null || _svc.StatusText.StartsWith("Paused", StringComparison.Ordinal)) { pill = "#33260F"; border = "#5C4515"; dot = "#F5B14C"; }
         else { pill = "#1A1E27"; border = "#2A3140"; dot = "#8A92A6"; }
 
-        Ctl<TextBlock>("StatusText").Text = _svc.StatusText;
+        // The pill only has room for a few words; why goes in its tooltip (and the card below).
+        Ctl<TextBlock>("StatusText").Text = outOfReach is not null ? $"Not filtering in {outOfReach}" : _svc.StatusText;
         var p = Ctl<Border>("StatusPill");
+        ToolTip.SetTip(p, outOfReach is not null ? $"{outOfReach} runs as administrator, so Windows keeps the keys typed into it from this app." : null);
         p.Background = new SolidColorBrush(Color.Parse(pill));
         p.BorderBrush = new SolidColorBrush(Color.Parse(border));
         Ctl<Ellipse>("StatusDot").Fill = new SolidColorBrush(Color.Parse(dot));
+
+        // Offer to restart as administrator once such a program has been in front (it stays, since this window being in
+        // front means that program no longer is).
+        var notice = OperatingSystem.IsWindows() && !Platform.Elevation.IsElevated ? _svc.ElevatedNotice : null;
+        Ctl<Border>("AdminCard").IsVisible = notice is not null;
+        if (notice is not null)
+            Ctl<TextBlock>("AdminText").Text =
+                $"{notice} runs as administrator. Windows doesn't let a program without administrator rights see the keys typed into it, so while {notice} is in front, nothing typed into it is filtered.";
 
         _loading = true;
         Ctl<ToggleSwitch>("FilterSwitch").IsChecked = _svc.Settings.Enabled;

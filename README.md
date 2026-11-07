@@ -19,12 +19,13 @@ When a key goes down again only a few milliseconds after it was released, that i
 - **Held keys keep working.** If a press is blocked but you are actually holding the key, it is let through as soon as the key starts repeating, so a held key is never lost for good.
 - **Protect held keys (optional, Windows).** For games: every release of a filtered key is held back by its delay, and if the switch bounces back down in that time the bounce is swallowed, so programs see the key stay down instead of a release and a missing press. A held movement key never stutters. The cost is that letting go of a key reaches programs that many milliseconds later. It is new in 1.1.0 and off by default.
 - **Pause for chosen programs (Windows).** Filtering pauses while a program on your list is in front, for example a game where you double-tap on purpose. The monitor still watches.
+- **Says when a program is out of reach (Windows).** Windows doesn't let a program without administrator rights see the keys typed into one that runs as administrator. While such a program is in front, the status and tray tooltip say *Not filtering in game.exe (runs as administrator)* instead of failing quietly, and the settings offer **Restart as administrator**. See [Programs that run as administrator](#programs-that-run-as-administrator).
 - **Security keys are left alone.** A YubiKey types its codes as a keyboard, repeating letters a few milliseconds apart, which looks exactly like chatter. Yubico keys are never filtered unless you give them settings of their own.
 - **Hotkey:** <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>F9</kbd> turns filtering on and off from anywhere (not on macOS).
 - **Built-in test.** "Simulate a bounce" sends a fake chatter burst through the real filter and tells you whether it was caught.
 - **Leaves other input alone.** Keystrokes that programs create (macros, remote desktop, on-screen keyboards, input methods) pass through untouched.
 - **Light.** The windows only exist while they are open. Sitting in the tray it uses about 13 MB of memory and no CPU while you aren't typing. The monitor's log is a small fixed buffer in memory that is never saved.
-- **Start when I sign in**, optional.
+- **Start when I sign in**, optional. Running as administrator, it starts as administrator at sign-in too, without Windows asking each time.
 
 <p align="center">
   <img src="docs/screenshots/monitor.png" width="560" alt="The chatter monitor: totals for blocked, got through, not filtered and close calls, then a list of keys such as I blocked 5 ms after letting go, D got through with a 4 ms press and an Add to list · 46 ms button, and Space blocked with a Was me button">
@@ -63,12 +64,30 @@ Only the Windows version has been used on real hardware so far. The Linux and ma
 
 | System | Status | Notes |
 | --- | --- | --- |
-| Windows 11, x64 | **Tested** | In daily use. |
-| Windows 10, x64 | Should work, untested | Same build as Windows 11. |
+| Windows 11, x64 | **Tested** | In daily use. Programs that run as administrator are only filtered while PAX Chatter Guard runs as administrator too ([below](#programs-that-run-as-administrator)). |
+| Windows 10, x64 | Should work, untested | Same build as Windows 11, same note about programs that run as administrator. |
 | Linux x64 (X11, Wayland, console) | **Builds, untested** | Needs the permissions below. You choose which keyboards to filter from a tick list; per-keyboard sensitivity is Windows only. |
 | macOS, Apple Silicon (arm64) | **Builds, untested** | Needs the Accessibility permission. Shift, Ctrl, Option and Cmd are never filtered, and the on/off hotkey isn't available (use the tray menu). Not signed or notarised. |
 | macOS, Intel (x64) | **Builds, untested** | As above. |
 | Windows or Linux on Arm | No download | May build from source with `-r win-arm64` or `-r linux-arm64`; untested. |
+
+### Programs that run as administrator
+
+Windows keeps programs apart by their rights (User Interface Privilege Isolation): a program without administrator rights can't see the keys typed into a program that runs as administrator, and a low-level keyboard hook is no exception. PAX Chatter Guard normally runs without those rights, so while a program that runs as administrator is in front (some games and their launchers, Task Manager, Registry Editor, an administrator command prompt), nothing typed into it reaches the filter. The chatter monitor sees nothing there either, and the on/off hotkey doesn't work.
+
+When that happens, the app says so instead of failing quietly:
+
+- The status in the settings and the chatter monitor reads **Not filtering in game.exe**, the tray tooltip *Not filtering in game.exe (runs as administrator)*, and the tray icon dims, as it does when filtering is off.
+- The settings name the program and offer **Restart as administrator** (it's in the tray menu too). Windows asks first; the new copy then filters every program.
+
+To have it start as administrator every time, restart it as administrator, then switch on **Start when I sign in** (or, if it was already on, press **Start as administrator instead** below it). Instead of the Run key it then registers a scheduled task that starts it with highest privileges when you sign in, so Windows doesn't ask each time. Switching it off removes the task and the Run entry; doing that from a copy that isn't running as administrator makes Windows ask first.
+
+Two things to keep in mind:
+
+- A program that starts as administrator without asking can be swapped out to get those rights: anything that can change the files in its folder could then run as administrator at your next sign-in. If you use this, keep the app in a folder only administrators can change, such as `C:\Program Files\PaxChatterGuard`, not under your user folder.
+- If your Windows account isn't an administrator, Windows asks for an administrator's password, and that copy runs as the administrator's account, with that account's settings.
+
+Whether a program runs as administrator is read from its access token. A program Windows won't let it look into at all (one of the system's, or another account's) is taken to run as administrator too.
 
 ## Install
 
@@ -85,7 +104,7 @@ Download from **[the latest release](https://github.com/joshpack/PaxChatterGuard
 
 1. Install the **[.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)** (x64) if you don't have it. The plain ".NET Runtime" is enough; the ".NET Desktop Runtime" includes it, so that works too.
 2. Unzip `PaxChatterGuard-1.1.0-win-x64.zip` somewhere permanent, for example into `%LOCALAPPDATA%`. It contains one folder, `PaxChatterGuard`. To update, quit the app and replace that folder; your settings live elsewhere and are kept.
-3. Run `PaxChatterGuard.exe` from that folder. It doesn't need administrator rights.
+3. Run `PaxChatterGuard.exe` from that folder. It doesn't need administrator rights, except to filter programs that themselves run as administrator (see [Programs that run as administrator](#programs-that-run-as-administrator)).
 
 The exe isn't code-signed, so SmartScreen may warn the first time: choose **More info → Run anyway**. To check the download in PowerShell: `Get-FileHash PaxChatterGuard-1.1.0-win-x64.zip` and compare it with the `.sha256` file.
 
@@ -135,7 +154,7 @@ This download is a plain folder, not a signed `.app` bundle, so expect rough edg
 ## First run
 
 - The settings window opens and a tray icon appears (an X on a green tile; it dims while filtering is off).
-- **Click the tray icon** to open the settings. **Right-click** it for *Settings…*, *Chatter monitor…*, *Filtering* (on/off) and *Quit*.
+- **Click the tray icon** to open the settings. **Right-click** it for *Settings…*, *Chatter monitor…*, *Filtering* (on/off), *Restart as administrator* (Windows, while not running as administrator) and *Quit*.
 - Closing the window keeps the filter running in the tray. *Quit* stops it.
 - Open the **Chatter monitor** and type normally for a while: anything that looks like chatter shows up there, blocked or not.
 - Switch on **Start when I sign in** to start with the system. It then starts quietly in the tray (`--minimized`) and only opens the window when something needs attention.
@@ -143,8 +162,11 @@ This download is a plain folder, not a signed `.app` bundle, so expect rough edg
 | System | What "Start when I sign in" adds |
 | --- | --- |
 | Windows | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value `PaxChatterGuard` |
+| Windows, running as administrator | A Task Scheduler task, `\PaxChatterGuard`: starts the app with highest privileges (as administrator, no prompt) when you sign in, with no time limit, also on battery. The Run value above is removed, so only one copy starts. |
 | Linux | `~/.config/autostart/pax-chatter-guard.desktop` |
 | macOS | `~/Library/LaunchAgents/com.paxchatterguard.app.plist` |
+
+On Windows, switching it off removes both the Run value and the task, whichever is there.
 
 ### Choosing a sensitivity
 
@@ -162,6 +184,7 @@ Not sure whether to trust the filter yet? Leave filtering off and keep the monit
 | --- | --- |
 | `--minimized` | Start in the tray without opening the window (used by "Start when I sign in"). |
 | `--safe-test N` | Quit by itself after *N* seconds. Meant for testing changes to the filter, so a mistake can never leave a broken filter on your keyboard. |
+| `--restarted` | Used by *Restart as administrator*: waits up to 15 seconds for the copy that is closing to finish, instead of giving up at once. |
 
 Only one copy runs at a time; starting a second one while the first is running does nothing.
 
@@ -179,7 +202,7 @@ Main fields: `Enabled`, `GlobalMs` (the sensitivity), `Rules` (scancode → ms, 
 
 ## Uninstall
 
-1. In the settings, switch off **Start when I sign in** (removes the startup entry listed above).
+1. In the settings, switch off **Start when I sign in** (removes the startup entry or task listed above).
 2. Right-click the tray icon → **Quit**.
 3. Delete the folder you unpacked it to, and the settings folder listed above.
 4. Linux, if you want them gone too: `sudo rm /etc/udev/rules.d/99-uinput.rules /etc/modules-load.d/uinput.conf` and `sudo gpasswd -d $USER input`.
@@ -205,7 +228,7 @@ dotnet publish -c Release -r osx-x64   --self-contained true -p:Version=1.1.0 -p
 
 Every target can be built on any of the three systems. If the project sits on a network drive whose clock differs from yours, build with `--no-incremental` so no change is skipped.
 
-The filter rules have their own tests, which feed made-up key presses into the engine and never touch a real keyboard:
+The filter rules have their own tests, which feed made-up key presses into the engine and never touch a real keyboard (plus a check of the start-as-administrator task's definition, which registers nothing):
 
 ```bash
 dotnet run --project tests/EngineTests
@@ -223,17 +246,19 @@ For automated tests of the whole app, the environment variable `PAXCG_ACCEPT_INJ
 | `Core/KeyCatalog.cs` | Key names by scancode |
 | `Platform/IKeyboardBackend.cs` | The interface each system implements, and the factory that picks one |
 | `Platform/WindowsBackend.cs` | Low-level hook, Raw Input keyboard detection, watchdog, sending held-back releases |
-| `Platform/ForegroundWatcher.cs` | Which program is in front, for the pause list (Windows) |
+| `Platform/ForegroundWatcher.cs` | Which program is in front, for the pause list, and whether it runs as administrator (Windows) |
+| `Platform/Elevation.cs` | Whether this app or another program runs as administrator, and starting programs as administrator (Windows) |
 | `Platform/LinuxBackend.cs` | evdev grab and uinput virtual keyboard |
 | `Platform/MacBackend.cs` | Quartz event tap |
 | `Platform/MemoryTrim.cs` | Hands unused memory back to the system after the window closes |
 | `Services/GuardService.cs` | Ties settings, engine and backend together |
 | `Services/GuardSettings.cs` | The settings file |
 | `Services/Autostart.cs` | Start at sign-in on each system |
+| `Services/SignInTask.cs` | The scheduled task that starts it as administrator at sign-in (Windows) |
 | `Views/SettingsWindow.axaml(.cs)` | The settings window |
 | `Views/MonitorWindow.axaml(.cs)` | The chatter monitor |
 | `SpadeIcon.cs` | The app and tray icon, drawn in code |
-| `tests/EngineTests/` | Tests for the filter rules |
+| `tests/EngineTests/` | Tests for the filter rules, and the sign-in task's definition |
 | `docs/screenshots/` | The pictures in this file |
 
 Built with [Avalonia](https://avaloniaui.net/) 12 on .NET 10.

@@ -44,6 +44,8 @@ public partial class MonitorWindow : Window
         _svc = svc;
         Icon = SpadeIcon.CreateWindowIcon();
         Ctl<Path>("Spade").Data = SpadeIcon.Geometry;
+        if (OperatingSystem.IsWindows() && Platform.Elevation.IsElevated)
+            Title = "Chatter Monitor — PAX Chatter Guard (administrator)";
 
         Ctl<CheckBox>("CloseCallsBox").IsCheckedChanged += (_, _) => ApplyVisibility();
         Ctl<CheckBox>("TopmostBox").IsCheckedChanged += (_, _) => Topmost = Ctl<CheckBox>("TopmostBox").IsChecked == true;
@@ -82,14 +84,18 @@ public partial class MonitorWindow : Window
 
     private void UpdateStatus()
     {
+        // A program that runs as administrator is in front (with "Keep on top" this window stays visible meanwhile).
+        var outOfReach = _svc.Problem is null && _svc.Engine.Enabled && _svc.PausedFor is null ? _svc.ElevatedFront : null;
         string pill, border, dot, text;
         if (_svc.Problem is not null) { pill = "#33141A"; border = "#7A2A33"; dot = "#F2666A"; text = "Needs attention"; }
         else if (_svc.IsFiltering) { pill = "#0C2A1D"; border = "#146B44"; dot = "#19F58C"; text = "Filtering on"; }
+        else if (outOfReach is not null) { pill = "#33260F"; border = "#5C4515"; dot = "#F5B14C"; text = $"Not filtering in {outOfReach}"; }
         else if (_svc.PausedFor is not null) { pill = "#33260F"; border = "#5C4515"; dot = "#F5B14C"; text = "Paused"; }
         else { pill = "#1A1E27"; border = "#2A3140"; dot = "#8A92A6"; text = "Filtering off"; }
 
         Ctl<TextBlock>("StatusText").Text = text;
         var p = Ctl<Border>("StatusPill");
+        ToolTip.SetTip(p, outOfReach is not null ? $"{outOfReach} runs as administrator, so Windows keeps the keys typed into it from this app." : null);
         p.Background = new SolidColorBrush(Color.Parse(pill));
         p.BorderBrush = new SolidColorBrush(Color.Parse(border));
         Ctl<Ellipse>("StatusDot").Fill = new SolidColorBrush(Color.Parse(dot));
@@ -99,7 +105,8 @@ public partial class MonitorWindow : Window
 
     private void Refresh()
     {
-        var mode = _svc.IsFiltering ? "watching and filtering"
+        var mode = _svc.ElevatedFront is { } admin ? $"can't see keys typed into {admin} (runs as administrator)"
+            : _svc.IsFiltering ? "watching and filtering"
             : _svc.PausedFor is { } program ? $"paused while {program} is in front"
             : "watching only, nothing is blocked";
         Ctl<TextBlock>("SinceText").Text = $"Since {_svc.Engine.LogSinceUtc.ToLocalTime():HH:mm} · {mode}";

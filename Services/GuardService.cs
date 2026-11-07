@@ -44,7 +44,8 @@ public sealed class GuardService : IDisposable
     /// <summary>Something notable happened (e.g. the hook was reinstalled). Raised on any thread.</summary>
     public event Action<string>? Notice;
 
-    public bool IsFiltering => Backend.IsRunning && Engine.Active;
+    /// <summary>Whether keys are being filtered right now: on, not paused, and not typed into a program out of reach.</summary>
+    public bool IsFiltering => Backend.IsRunning && Engine.Active && ElevatedFront is null;
 
     public string StatusText
     {
@@ -54,12 +55,36 @@ public sealed class GuardService : IDisposable
                 return "Needs attention";
             if (!Engine.Enabled)
                 return "Off";
-            return PausedFor is { } program ? $"Paused ({program})" : "On";
+            if (PausedFor is { } program)
+                return $"Paused ({program})";
+            return ElevatedFront is { } admin ? $"Not filtering in {admin} (runs as administrator)" : "On";
         }
     }
 
     /// <summary>The program on the pause list that is in front right now, or null when filtering isn't paused.</summary>
     public string? PausedFor { get; private set; }
+
+    /// <summary>
+    /// The program in front when it runs as administrator and this app doesn't (Windows), or null. Windows keeps the keys
+    /// typed into it from the keyboard hook, so while it is in front nothing is filtered, and the monitor sees nothing.
+    /// </summary>
+    public string? ElevatedFront { get; private set; }
+
+    /// <summary>The program run as administrator that was in front most recently since the app started, or null (Windows).</summary>
+    public string? LastElevated { get; private set; }
+
+    private string? _hiddenNotice;
+
+    /// <summary>The program to offer "Restart as administrator" for, unless the user put that offer away for it.</summary>
+    public string? ElevatedNotice =>
+        LastElevated is { } program && !string.Equals(program, _hiddenNotice, StringComparison.OrdinalIgnoreCase) ? program : null;
+
+    /// <summary>Puts the restart offer away until another program that runs as administrator is in front. UI thread.</summary>
+    public void HideElevatedNotice()
+    {
+        _hiddenNotice = LastElevated;
+        Changed?.Invoke();
+    }
 
     private ForegroundWatcher? _foreground;
 
@@ -71,15 +96,16 @@ public sealed class GuardService : IDisposable
     }
 
     /// <summary>
-    /// Watches the program in front while the pause list has programs on it (and only then), and pauses filtering while
-    /// one of them is in front. UI thread.
+    /// Watches the program in front (Windows): to pause filtering while a program on the pause list is in front, and, while
+    /// this app doesn't run as administrator, to tell when the program in front does (its keys are out of the hook's
+    /// reach). Only runs while one of those applies. UI thread.
     /// </summary>
-    private void UpdatePauseWatch()
+    private void UpdateForegroundWatch()
     {
         if (!OperatingSystem.IsWindows())
             return;
 
-        if (Settings.PausedPrograms.Count == 0)
+        if (Settings.PausedPrograms.Count == 0 && Elevation.IsElevated)
         {
             _foreground?.Dispose();
             _foreground = null;
@@ -89,7 +115,7 @@ public sealed class GuardService : IDisposable
             try
             {
                 _foreground = new ForegroundWatcher();
-                _foreground.Changed += UpdatePause;
+                _foreground.Changed += UpdateForeground;
                 _foreground.Start();
             }
             catch
@@ -98,18 +124,29 @@ public sealed class GuardService : IDisposable
             }
         }
 
-        UpdatePause();
+        UpdateForeground();
     }
 
-    private void UpdatePause()
+    private void UpdateForeground()
     {
-        var front = OperatingSystem.IsWindows() ? _foreground?.Current : null;
+        string? front = null;
+        var elevated = false;
+        if (OperatingSystem.IsWindows() && _foreground is { } watcher)
+        {
+            front = watcher.Current;
+            elevated = watcher.CurrentElevated;
+        }
+
         var paused = front is not null && Settings.PausedPrograms.Any(p => string.Equals(p, front, StringComparison.OrdinalIgnoreCase));
         var pausedFor = paused ? front : null;
-        if (pausedFor == PausedFor && Engine.Suspended == paused)
+        var admin = elevated ? front ?? "this program" : null;
+        if (admin is not null)
+            LastElevated = admin;
+        if (pausedFor == PausedFor && Engine.Suspended == paused && admin == ElevatedFront)
             return;
         PausedFor = pausedFor;
         Engine.Suspended = paused;
+        ElevatedFront = admin;
         Changed?.Invoke();
     }
 
@@ -126,7 +163,7 @@ public sealed class GuardService : IDisposable
         var acceptInjected = Environment.GetEnvironmentVariable("PAXCG_ACCEPT_INJECTED") == "1";
         Engine.Config = Settings.ToConfig(ignoreInjected: !acceptInjected, holdSafeSupported: Backend.SupportsHoldSafe);
         Backend.SetDeviceFilter(Settings.LinuxDevices.Count > 0 ? Settings.LinuxDevices : null);
-        UpdatePauseWatch();
+        UpdateForegroundWatch();
         Changed?.Invoke();
     }
 

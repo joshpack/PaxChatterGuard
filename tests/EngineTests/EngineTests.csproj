@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- The filter rules tested on their own: no keyboard hook, no window, nothing typed anywhere. Run with `dotnet run`. -->
+  <!-- The filter rules tested on their own: no keyboard hook, no window, nothing typed anywhere. Run with `dotnet run`.
+       Also the definition of the start-as-administrator task (only the text; nothing is registered). -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -11,6 +12,7 @@
 
   <ItemGroup>
     <Compile Include="..\..\Core\*.cs" Link="Core\%(Filename)%(Extension)" />
+    <Compile Include="..\..\Services\SignInTask.cs" Link="Services\SignInTask.cs" />
   </ItemGroup>
 
 </Project>
