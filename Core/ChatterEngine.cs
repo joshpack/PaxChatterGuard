@@ -23,10 +23,12 @@ public enum Verdict
 }
 
 /// <summary>
-/// A raw keyboard event as the platform backend saw it. Times are microseconds from any steady clock.
+/// A raw keyboard (or mouse button) event as the platform backend saw it. Times are microseconds from any steady clock.
 /// <paramref name="Replayed"/> marks a keystroke the backend sent itself on the engine's behalf (a held-back release).
+/// <paramref name="X"/> and <paramref name="Y"/> are where the pointer was, in screen pixels, for a mouse button.
 /// </summary>
-public readonly record struct KeyEvent(int Key, bool Down, long Micros, bool Injected = false, bool SelfTest = false, string? Device = null, bool Replayed = false);
+public readonly record struct KeyEvent(int Key, bool Down, long Micros, bool Injected = false, bool SelfTest = false, string? Device = null, bool Replayed = false,
+    int X = 0, int Y = 0);
 
 /// <summary>One keyboard's own settings: its own sensitivity and exceptions, or switched off entirely (Enabled = false).</summary>
 public sealed record DeviceCfg(bool Enabled, int GlobalMs, IReadOnlyDictionary<int, int> Rules);
@@ -54,6 +56,9 @@ public enum Exempt : byte
 
     /// <summary>Filtering is paused while a program on the pause list is in front.</summary>
     Paused,
+
+    /// <summary>A mouse button, and mouse buttons aren't filtered.</summary>
+    MouseOff,
 }
 
 /// <summary>An immutable snapshot of the settings the engine works from; swapped in whole, so the hook never sees a half-edit.</summary>
@@ -84,8 +89,15 @@ public sealed class GuardConfig
     /// <summary>
     /// Protect held keys: hold every release of a filtered key back for its delay, and if the key bounces back down in that
     /// time, swallow the bounce so programs see the key stay down. Only backends that can send keystrokes support it.
+    /// Mouse buttons too, except that a click's release goes out early once the pointer moves (see <see cref="ChatterEngine.OnPointerMove"/>).
     /// </summary>
     public bool HoldSafe { get; init; }
+
+    /// <summary>Filter mouse buttons too. Only backends that can watch the mouse support it; while off, they don't.</summary>
+    public bool FilterMouse { get; init; }
+
+    /// <summary>How soon after letting go of a mouse button a new click of it counts as chatter, in milliseconds.</summary>
+    public int MouseMs { get; init; } = 50;
 
     /// <summary>The key (F9) pressed together with Ctrl+Alt+Shift.</summary>
     public const int HotkeyKey = 0x43;
@@ -108,7 +120,14 @@ public sealed class GuardConfig
         int baseMs;
         int? ruleMs;
         var keyboardOn = true;
-        if (device is not null && Devices.TryGetValue(device, out var d))
+        var mouse = KeyCatalog.IsMouseButton(key);
+        if (mouse)
+        {
+            // Buttons follow the mouse delay and the default exception list; a keyboard's own settings are for its keys.
+            baseMs = MouseMs;
+            ruleMs = Rules.TryGetValue(key, out var own) ? own.ThresholdMs : null;
+        }
+        else if (device is not null && Devices.TryGetValue(device, out var d))
         {
             baseMs = d.GlobalMs;
             keyboardOn = d.Enabled;
@@ -130,6 +149,8 @@ public sealed class GuardConfig
             why = Exempt.Modifier;
         if (!keyboardOn)
             why = Exempt.KeyboardOff;
+        if (mouse && !FilterMouse)
+            why = Exempt.MouseOff;
 
         reference = (ms > 0 ? ms : baseMs) * 1000L;
         return why == Exempt.None ? ms * 1000L : 0;
@@ -203,6 +224,11 @@ public readonly record struct ChatterEvent(
 /// gap, each press's length tells a finger from a switch: a person can't press and release a key in under
 /// <see cref="TinyPressMicros"/>, a bouncing contact does it in one to five milliseconds.
 /// </para>
+/// <para>
+/// Mouse buttons are keys with codes of their own (<see cref="KeyCatalog.MouseLeft"/> on) and their own delay
+/// (<see cref="GuardConfig.MouseMs"/>), judged by the same rules. They never auto-repeat, and in protect-held-keys mode
+/// the pointer matters too: see <see cref="OnPointerMove"/>.
+/// </para>
 /// </summary>
 public sealed class ChatterEngine
 {
@@ -258,6 +284,11 @@ public sealed class ChatterEngine
 
         /// <summary>This press was a bounce swallowed while the release was held back; programs never saw it end.</summary>
         public bool BounceHeld;
+
+        // Mouse buttons in protect-held-keys mode: where the press that programs see began, and whether it has been
+        // dragged further than the drag distance since (then its release is held back in full, even while moving).
+        public int SpotX, SpotY;
+        public bool Dragged;
 
         // A quick re-press (whatever happened to it), judged once its release shows how long it lasted, for the
         // suggested delay: was it the switch or a finger?
@@ -395,7 +426,10 @@ public sealed class ChatterEngine
         {
             _config = value;
             lock (_lock)
+            {
                 _learned.Clear(); // anything learned has been saved into the settings, which are now in `value`
+                RefreshPointerWatch();
+            }
         }
     }
 
@@ -419,7 +453,11 @@ public sealed class ChatterEngine
         Verdict verdict;
         (string? Device, int Key, int Ms)? learned;
         lock (_lock)
+        {
             verdict = Decide(e, out toggledTo, out learned);
+            if (KeyCatalog.IsMouseButton(e.Key))
+                RefreshPointerWatch();
+        }
 
         if (toggledTo is { } state)
             HotkeyToggled?.Invoke(state);
@@ -435,13 +473,19 @@ public sealed class ChatterEngine
         var cfg = _config;
 
         if (!_keys.TryGetValue(e.Key, out var s))
+        {
             _keys[e.Key] = s = new KeyState();
+            if (KeyCatalog.IsMouseButton(e.Key))
+                _buttons[e.Key - KeyCatalog.MouseLeft] = s;
+        }
 
         // Keystrokes the backend sent for us (a held-back release, or a release and press re-sent in order) bring programs
         // up to date with the key: let them through and note what programs now see.
         if (e.Replayed)
         {
             s.OutDown = e.Down;
+            if (!e.Down && KeyCatalog.IsMouseButton(e.Key))
+                _releasing &= ~(1 << (e.Key - KeyCatalog.MouseLeft)); // a release sent early is through: the pointer may move
             return Verdict.Pass;
         }
 
@@ -474,7 +518,15 @@ public sealed class ChatterEngine
 
         // A press we already blocked (including the hotkey itself) keeps being blocked until it is released, even if
         // filtering has just been switched off; otherwise a release would arrive without its press.
-        if (s.BlockedPress)
+        if (s.BlockedPress && e.Down && KeyCatalog.IsMouseButton(e.Key))
+        {
+            // A mouse button never repeats, so pressed again while its blocked press was still down means that press's
+            // release went past us (the mouse hook was being set up again). Take this as a fresh press.
+            s.BlockedPress = false;
+            s.PressSeq = 0;
+            s.Track = false;
+        }
+        else if (s.BlockedPress)
         {
             if (e.Down)
             {
@@ -573,6 +625,14 @@ public sealed class ChatterEngine
 
             s.OutDown = true;
             s.PressSeq = 0;
+            if (KeyCatalog.IsMouseButton(e.Key))
+            {
+                // Programs see a new press here: the spot a click's release must beat the pointer away from.
+                s.SpotX = e.X;
+                s.SpotY = e.Y;
+                s.Dragged = false;
+            }
+
             if (gap < reference && why != Exempt.None)
             {
                 // Not filtered, but this is what the filter would drop: worth showing.
@@ -694,7 +754,103 @@ public sealed class ChatterEngine
                 due.Add(key);
             }
 
+            if (due.Count > 0)
+                RefreshPointerWatch();
             return due;
+        }
+    }
+
+    // ---- Mouse buttons in protect-held-keys mode: the pointer -----------------------------------------------------
+
+    /// <summary>
+    /// How far the pointer may move with a button down before programs take it for a drag, in pixels (the system's drag
+    /// rectangle; Windows' default is 4 by 4). The backend sets it from the system settings.
+    /// </summary>
+    public (int X, int Y) DragDistance { get; set; } = (4, 4);
+
+    /// <summary>The longest pointer movement is held up waiting for a release sent early to come through.</summary>
+    public const long ReleaseWaitMicros = 30_000;
+
+    private readonly KeyState?[] _buttons = new KeyState?[KeyCatalog.MouseButtonCount];
+    private volatile bool _pointerWatch;
+    private int _releasing;           // buttons whose release was sent early and hasn't come back through yet
+    private long _releasingUntil;
+
+    /// <summary>
+    /// Whether <see cref="OnPointerMove"/> has anything to do right now. Read without a lock, so the mouse hook can let
+    /// ordinary movement straight through.
+    /// </summary>
+    public bool WatchesPointer => _pointerWatch;
+
+    /// <summary>
+    /// Whether pointer movement needs looking at: protect-held-keys mode is on and programs see a mouse button down (held,
+    /// or with its release held back), or a release sent early is still on its way. Otherwise movement costs nothing.
+    /// </summary>
+    private void RefreshPointerWatch()
+    {
+        var watch = _releasing != 0;
+        if (_config.HoldSafe)
+            foreach (var b in _buttons)
+                watch |= b is { OutDown: true };
+        _pointerWatch = watch;
+    }
+
+    /// <summary>
+    /// The pointer moved to (<paramref name="x"/>, <paramref name="y"/>), in screen pixels. It only matters in
+    /// protect-held-keys mode while programs see a mouse button down.
+    /// <para>
+    /// A press that moves further than <see cref="DragDistance"/> is a drag: its release is held back in full, even while
+    /// the pointer keeps moving, so a bounce mid-drag can't drop what is being dragged. A click (a press that stayed on its
+    /// spot) is different: programs must get its release before the pointer leaves the spot, or they see a short drag
+    /// instead of a click. So once the pointer moves more than half the drag distance away, a click's held-back release
+    /// is handed over in <paramref name="releaseNow"/> to be sent at once; from here on it counts as released.
+    /// </para>
+    /// </summary>
+    /// <returns>
+    /// True to swallow this movement: the releases in <paramref name="releaseNow"/> must reach programs before it, or
+    /// releases handed over a moment ago haven't come through yet (for at most <see cref="ReleaseWaitMicros"/>).
+    /// </returns>
+    public bool OnPointerMove(int x, int y, long micros, List<int> releaseNow)
+    {
+        if (!_pointerWatch)
+            return false;
+
+        lock (_lock)
+        {
+            if (_releasing != 0)
+            {
+                if (micros < _releasingUntil)
+                    return true;
+                _releasing = 0; // they should be back within a millisecond; never hold the pointer up for long
+            }
+
+            var (dragX, dragY) = DragDistance;
+            for (var i = 0; i < _buttons.Length; i++)
+            {
+                var s = _buttons[i];
+                if (s is null || !s.OutDown)
+                    continue;
+
+                var offX = Math.Abs(x - s.SpotX);
+                var offY = Math.Abs(y - s.SpotY);
+                if (!s.UpPending)
+                {
+                    if (offX > dragX || offY > dragY)
+                        s.Dragged = true; // still held: every program takes this for a drag by now
+                }
+                else if (!s.Dragged && (offX > dragX / 2 || offY > dragY / 2))
+                {
+                    s.UpPending = false;
+                    s.OutDown = false;
+                    releaseNow.Add(KeyCatalog.MouseLeft + i);
+                    _releasing |= 1 << i;
+                }
+            }
+
+            if (releaseNow.Count > 0)
+                _releasingUntil = micros + ReleaseWaitMicros;
+            RefreshPointerWatch();
+            return releaseNow.Count > 0;
         }
     }
 

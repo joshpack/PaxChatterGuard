@@ -4,6 +4,10 @@ namespace PaxChatterGuard.Core;
 /// Keys are identified by their physical position, using PS/2 "set 1" scancodes: 0x1E is always the key right of Caps
 /// Lock, whatever the layout says it types. Extended keys (right Ctrl, arrows, ...) are 0xE000 plus the scancode. Every
 /// platform backend translates its native codes into these, so settings mean the same thing on every system.
+/// <para>
+/// Mouse buttons get codes of their own, far above any scancode (<see cref="MouseLeft"/> to <see cref="MouseForward"/>),
+/// so they go through the same engine as keys: their own delays, the chatter monitor and the caught list.
+/// </para>
 /// </summary>
 public static class KeyCatalog
 {
@@ -12,18 +16,45 @@ public static class KeyCatalog
     // Caps Lock, Num Lock (reported with or without the extended flag) and Scroll Lock.
     private static readonly HashSet<int> Locks = new() { 0x3A, 0x45, 0xE045, 0x46 };
 
+    /// <summary>The primary mouse button (the left one unless the buttons are swapped in the system settings).</summary>
+    public const int MouseLeft = 0x10001;
+
+    public const int MouseRight = 0x10002;
+    public const int MouseMiddle = 0x10003;
+
+    /// <summary>The side button for "back" (X1, also called mouse 4).</summary>
+    public const int MouseBack = 0x10004;
+
+    /// <summary>The side button for "forward" (X2, also called mouse 5).</summary>
+    public const int MouseForward = 0x10005;
+
+    /// <summary>How many mouse buttons there are; <see cref="MouseLeft"/> + n is button n.</summary>
+    public const int MouseButtonCount = 5;
+
+    public static bool IsMouseButton(int key) => key is >= MouseLeft and <= MouseForward;
+
     /// <summary>Keys that switch something on and off when pressed.</summary>
     public static bool IsLockKey(int key) => Locks.Contains(key);
 
     /// <summary>Every key the app can set an exception for, in keyboard order.</summary>
     public static IReadOnlyList<(int Code, string Name)> All { get; } = Build();
 
-    private static readonly Dictionary<int, string> Names = All.ToDictionary(k => k.Code, k => k.Name);
+    /// <summary>The mouse buttons that can be filtered (Windows), in the order they are listed.</summary>
+    public static IReadOnlyList<(int Code, string Name)> MouseButtons { get; } = new (int, string)[]
+    {
+        (MouseLeft, "Left click"), (MouseRight, "Right click"), (MouseMiddle, "Middle click"),
+        (MouseBack, "Mouse back"), (MouseForward, "Mouse forward"),
+    };
+
+    private static readonly Dictionary<int, string> Names = All.Concat(MouseButtons).ToDictionary(k => k.Code, k => k.Name);
 
     public static bool IsModifier(int key) => Modifiers.Contains(key);
 
     /// <summary>A readable name; unknown keys show their code so nothing is ever hidden.</summary>
     public static string NameOf(int key) => Names.TryGetValue(key, out var n) ? n : $"Key {key:X}";
+
+    /// <summary>"button" for a mouse button, otherwise "key", for sentences about one.</summary>
+    public static string NounFor(int key) => IsMouseButton(key) ? "button" : "key";
 
     private static List<(int, string)> Build()
     {

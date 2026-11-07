@@ -84,6 +84,6 @@
     </Border>
 
     <TextBlock x:Name="Footer" Grid.Row="4" Classes="muted" FontSize="11" TextWrapping="Wrap" Margin="2,10,2,0"
-               Text="Gap = how soon the key went down again after you let go of it. Held = how long that press lasted; a finger can't do under 15 ms. Add to list gives a key its own delay, just above the gap. Kept in memory only, never saved." />
+               Text="Gap = how soon the key (or mouse button) went down again after you let go of it. Held = how long that press lasted; a finger can't do under 15 ms. Add to list gives a key its own delay, just above the gap. Kept in memory only, never saved." />
   </Grid>
 </Window>

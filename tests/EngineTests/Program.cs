@@ -397,6 +397,212 @@ Test("paused for a program: chatter passes and is logged as paused", () =>
     Eq(Exempt.Paused, e.RecentEvents()[0].Why, "why");
 });
 
+// ---- Mouse buttons ----------------------------------------------------------------------------------------------------
+
+const int LClick = KeyCatalog.MouseLeft;
+const int RClick = KeyCatalog.MouseRight;
+
+GuardConfig Mouse(bool holdSafe = false) => new() { GlobalMs = 30, FilterMouse = true, MouseMs = 50, HoldSafe = holdSafe };
+
+// A button event with the pointer at (x, y); same letters as Ev.
+string Btn(ChatterEngine e, int button, bool down, double ms, int x = 100, int y = 100, bool replayed = false) =>
+    e.OnKey(new KeyEvent(button, down, (long)(ms * 1000), Replayed: replayed, X: x, Y: y)) switch
+    {
+        Verdict.Pass => "P",
+        Verdict.Block => "B",
+        Verdict.Defer => "D",
+        _ => "R",
+    };
+
+// The pointer moved: "pass", "hold" (held up, nothing to send) or "release " + the buttons to send first.
+string Move(ChatterEngine e, int x, int y, double ms)
+{
+    var now = new List<int>();
+    var hold = e.OnPointerMove(x, y, (long)(ms * 1000), now);
+    return now.Count > 0 ? "release " + string.Join(", ", now.Select(KeyCatalog.NameOf)) : hold ? "hold" : "pass";
+}
+
+Test("mouse: buttons have names and codes no key uses", () =>
+{
+    Eq("Left click", KeyCatalog.NameOf(LClick), "left");
+    Eq("Mouse forward", KeyCatalog.NameOf(KeyCatalog.MouseForward), "X2");
+    Eq(5, KeyCatalog.MouseButtons.Count(b => KeyCatalog.IsMouseButton(b.Code)), "all five are buttons");
+    Eq(0, KeyCatalog.All.Count(k => KeyCatalog.IsMouseButton(k.Code)), "no key is a button");
+    Eq("button", KeyCatalog.NounFor(RClick), "noun");
+});
+
+Test("mouse: a click that bounces back within the mouse delay is blocked, with its release", () =>
+{
+    var e = Engine(Mouse());
+    Eq("PPBBPP", Seq(e, LClick, "d0 u80 d85 u88 d300 u380"), "verdicts");
+    var log = e.RecentEvents();
+    Eq(1, log.Count, "log lines");
+    Eq(LClick, log[0].Key, "button");
+    Eq(ChatterKind.Blocked, log[0].Kind, "kind");
+    Eq(5000L, log[0].GapMicros, "gap");
+    Eq(50, log[0].DelayMs, "the mouse delay");
+});
+
+Test("mouse: buttons follow the mouse delay, keys the keyboard's", () =>
+{
+    var e = Engine(Mouse());
+    Eq("PPPP", Seq(e, I, "d0 u80 d120 u200"), "40 ms gap on a key passes at 30 ms");
+    Eq("PPBB", Seq(e, RClick, "d0 u80 d120 u200"), "40 ms gap on a button is blocked at 50 ms");
+    Eq("PPPP", Seq(e, LClick, "d1000 u1080 d1160 u1240"), "a double-click 80 ms apart passes");
+    var keyboards = new GuardConfig
+    {
+        FilterMouse = true,
+        MouseMs = 50,
+        Devices = new Dictionary<string, DeviceCfg> { ["046D:C359"] = new(true, 20, new Dictionary<int, int> { [LClick] = 10 }) },
+    };
+    Eq(50_000L, keyboards.ThresholdMicros(LClick, "046D:C359"), "a keyboard's own settings don't apply to buttons");
+});
+
+Test("mouse: a button's own exception applies, and 0 never filters it", () =>
+{
+    var e = Engine(new GuardConfig
+    {
+        FilterMouse = true,
+        MouseMs = 50,
+        Rules = new Dictionary<int, KeyRule> { [LClick] = new(20), [RClick] = new(0) },
+    });
+    Eq("PPPP", Seq(e, LClick, "d0 u80 d110 u190"), "30 ms gap passes at its own 20 ms");
+    Eq("PPPP", Seq(e, RClick, "d0 u80 d85 u88"), "never filtered");
+    Eq(Exempt.KeyRule, e.RecentEvents()[0].Why, "why");
+});
+
+Test("mouse: with mouse buttons off, their chatter passes and is logged as not filtered", () =>
+{
+    var e = Engine(new GuardConfig { GlobalMs = 30 });
+    Eq("PPPP", Seq(e, LClick, "d0 u80 d85 u88"), "verdicts");
+    Eq(Exempt.MouseOff, e.RecentEvents()[0].Why, "why");
+    Eq(0L, e.TotalBlocked, "nothing blocked");
+});
+
+Test("mouse: a blocked press is never let through as if it repeated", () =>
+{
+    var e = Engine(Mouse());
+    Eq("PPB", Seq(e, LClick, "d0 u80 d85"), "start");
+    // Buttons don't repeat: a second press with no release in between means the release went past the hook.
+    Eq("P", Btn(e, LClick, true, 300), "a fresh press");
+    Eq(ChatterFlags.None, e.RecentEvents()[0].Flags & ChatterFlags.HeldOn, "not taken for a held key");
+    Eq("P", Btn(e, LClick, false, 380), "its release");
+});
+
+Test("mouse: buttons show up in the caught list, but not under a keyboard", () =>
+{
+    var e = Engine(Mouse());
+    Seq(e, LClick, "d0 u80 d85 u88");
+    Seq(e, I, "d0 u80 d85 u88", "046D:C359");
+    Eq(2, e.CaughtKeys().Count, "all keyboards");
+    Eq(1, e.CaughtKeys().Single(k => k.Key == LClick).Count, "left click blocked once");
+    Eq(false, e.CaughtKeys("046D:C359").Any(k => k.Key == LClick), "not under that keyboard");
+    Eq(5000L, e.CaughtKeys().Single(k => k.Key == LClick).ChatterMaxMicros, "its chatter counts for the suggestion");
+});
+
+Test("mouse: injected clicks are left alone", () =>
+{
+    var e = Engine(Mouse());
+    Eq("P", Ev(e, LClick, true, 0, injected: true), "1");
+    Eq("P", Ev(e, LClick, false, 80, injected: true), "2");
+    Eq("P", Ev(e, LClick, true, 85, injected: true), "3");
+    Eq(0, e.RecentEvents().Count, "log lines");
+});
+
+// ---- Mouse buttons with protect held keys --------------------------------------------------------------------------
+
+Test("protect held buttons: a bounce while holding still keeps the button down", () =>
+{
+    var e = Engine(Mouse(holdSafe: true));
+    Eq("P", Btn(e, LClick, true, 0), "press");
+    Eq("D", Btn(e, LClick, false, 500), "the switch lets go");
+    Eq("pass", Move(e, 101, 100, 501), "a 1 px tremor changes nothing");
+    Eq("B", Btn(e, LClick, true, 503), "and bounces back: swallowed");
+    Eq(ChatterFlags.KeptHeld, e.RecentEvents()[0].Flags & ChatterFlags.KeptHeld, "logged as kept held");
+    Eq("D", Btn(e, LClick, false, 2000), "the real release is held back");
+    Eq(1, e.TakeDueReleases(2050_000).Count, "and sent 50 ms later");
+});
+
+Test("protect held buttons: a click's release goes out first when the pointer leaves the spot", () =>
+{
+    var e = Engine(Mouse(holdSafe: true));
+    Eq("P", Btn(e, LClick, true, 0), "press at 100,100");
+    Eq("D", Btn(e, LClick, false, 80), "release held back");
+    Eq("pass", Move(e, 102, 99, 82), "within half the drag distance");
+    Eq("release Left click", Move(e, 103, 100, 84), "leaving the spot: release first");
+    Eq(null, e.NextReleaseDue(), "nothing waits any more");
+    Eq("hold", Move(e, 105, 100, 84.5), "movement waits until the release is through");
+    Eq("P", Btn(e, LClick, false, 84.7, replayed: true), "our release comes back");
+    Eq("pass", Move(e, 107, 100, 85), "then the pointer moves freely");
+    Eq(false, e.WatchesPointer, "and isn't even looked at");
+});
+
+Test("protect held buttons: a drag's release is held back in full while the pointer moves", () =>
+{
+    var e = Engine(Mouse(holdSafe: true));
+    Eq("P", Btn(e, LClick, true, 0), "press");
+    Eq("pass", Move(e, 110, 100, 100), "dragged 10 px");
+    Eq("D", Btn(e, LClick, false, 500, 130), "the switch lets go mid-drag");
+    Eq("pass", Move(e, 140, 100, 502), "the drag goes on");
+    Eq("B", Btn(e, LClick, true, 505, 150), "bounce swallowed: nothing dropped");
+    Eq("pass", Move(e, 170, 100, 600), "still dragging");
+    Eq("D", Btn(e, LClick, false, 900, 170), "the real drop");
+    Eq("pass", Move(e, 200, 100, 910), "still held back while moving");
+    Eq(LClick, e.TakeDueReleases(950_000).Single(), "sent when its delay runs out");
+});
+
+Test("protect held buttons: a bounce after a click's early release is blocked as chatter", () =>
+{
+    var e = Engine(Mouse(holdSafe: true));
+    Eq("PD", Btn(e, LClick, true, 0) + Btn(e, LClick, false, 80), "click");
+    Eq("release Left click", Move(e, 110, 100, 82), "pointer moves off");
+    Eq("P", Btn(e, LClick, false, 82.5, replayed: true), "our release");
+    Eq("BB", Btn(e, LClick, true, 85, 110) + Btn(e, LClick, false, 88, 110), "the bounce");
+    Eq(1L, e.TotalBlocked, "blocked once");
+});
+
+Test("protect held buttons: a release that never comes back holds the pointer up 30 ms at most", () =>
+{
+    var e = Engine(Mouse(holdSafe: true));
+    Eq("PD", Btn(e, LClick, true, 0) + Btn(e, LClick, false, 80), "click");
+    Eq("release Left click", Move(e, 110, 100, 82), "pointer moves off");
+    Eq("hold", Move(e, 112, 100, 100), "waiting");
+    Eq("pass", Move(e, 114, 100, 113), "gave up waiting");
+});
+
+Test("protect held buttons: a press after the delay, before the release went out, is re-sent in order", () =>
+{
+    var e = Engine(Mouse(holdSafe: true));
+    Eq("PD", Btn(e, LClick, true, 0) + Btn(e, LClick, false, 80), "click");
+    Eq("R", Btn(e, LClick, true, 140, 300, 300), "pressed again 60 ms later, elsewhere");
+    Eq("PP", Btn(e, LClick, false, 140.2, replayed: true) + Btn(e, LClick, true, 140.3, replayed: true), "re-sent pair");
+    Eq("pass", Move(e, 301, 300, 150), "the spot is the new press's");
+    Eq("D", Btn(e, LClick, false, 200, 301, 300), "its release is held back");
+    Eq("release Left click", Move(e, 300, 304, 202), "and goes out once the pointer leaves");
+});
+
+Test("protect held buttons: movement isn't looked at without a button down or with the mode off", () =>
+{
+    var e = Engine(Mouse(holdSafe: true));
+    Eq(false, e.WatchesPointer, "nothing down");
+    Eq("pass", Move(e, 500, 500, 0), "moves pass");
+    Seq(e, I, "d10 u90");
+    Eq(false, e.WatchesPointer, "a held-back key release has no spot");
+    Eq(1, e.TakeDueReleases(120_000).Count, "and still goes out on time");
+    var off = Engine(Mouse());
+    Btn(off, LClick, true, 0);
+    Eq(false, off.WatchesPointer, "protect held keys off");
+    Eq("P", Btn(off, LClick, false, 80), "release passes at once");
+});
+
+Test("protect held buttons: stopping sends a waiting button release", () =>
+{
+    var e = Engine(Mouse(holdSafe: true));
+    Eq("PD", Btn(e, RClick, true, 0) + Btn(e, RClick, false, 80), "click");
+    Eq(RClick, e.TakeDueReleases(0, all: true).Single(), "sent");
+    Eq(false, e.WatchesPointer, "nothing left to watch");
+});
+
 // ---- Suggested delay per key ------------------------------------------------------------------------------------------
 
 int Suggest(int current, double chatterMs, double humanMs) =>

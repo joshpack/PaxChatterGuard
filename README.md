@@ -17,14 +17,15 @@ When a key goes down again only a few milliseconds after it was released, that i
 - **Per-keyboard settings (Windows).** Every keyboard it sees typing gets an entry. Change one and it gets its own sensitivity and exceptions; switch one off and that keyboard is left alone. The others follow the defaults.
 - **Auto-adjust (optional).** When chatter gets past a key's delay a second time (a press too short for a finger, sooner than the limit you set, 45 ms by default), that key's delay is raised to just above the gap, never past the limit. Quick double taps you make on purpose never count.
 - **Held keys keep working.** If a press is blocked but you are actually holding the key, it is let through as soon as the key starts repeating, so a held key is never lost for good.
-- **Protect held keys (optional, Windows).** For games: every release of a filtered key is held back by its delay, and if the switch bounces back down in that time the bounce is swallowed, so programs see the key stay down instead of a release and a missing press. A held movement key never stutters. The cost is that letting go of a key reaches programs that many milliseconds later. It is new in 1.1.0 and off by default.
+- **Protect held keys (optional, Windows).** For games: every release of a filtered key is held back by its delay, and if the switch bounces back down in that time the bounce is swallowed, so programs see the key stay down instead of a release and a missing press. A held movement key never stutters. The cost is that letting go of a key reaches programs that many milliseconds later. It is new in 1.1.0 and off by default. With mouse buttons filtered it covers them too: a held button or a drag can't let go by itself (drag chatter), while a click's release still goes out the moment the pointer moves, so a click never turns into a short drag.
+- **Mouse buttons too (optional, Windows).** Switch on **Also filter mouse buttons** and a worn mouse switch can't double-click either: a click that comes back sooner than the mouse delay after letting go of the same button is dropped, together with its release. The mouse delay is a setting of its own, 50 ms to start with. Left, right, middle and the two side buttons (back and forward) work like keys: each can have its own exception, and they show up in the chatter monitor and under caught keys with a suggested delay. Clicks that programs create are left alone, and so are taps on a touch screen or with a pen. While it is off, which is the default, the mouse isn't watched at all. New in 1.2.0, and so far tried only by the engine tests, not yet on a real worn mouse.
 - **Pause for chosen programs (Windows).** Filtering pauses while a program on your list is in front, for example a game where you double-tap on purpose. The monitor still watches.
 - **Says when a program is out of reach (Windows).** Windows doesn't let a program without administrator rights see the keys typed into one that runs as administrator. While such a program is in front, the status and tray tooltip say *Not filtering in game.exe (runs as administrator)* instead of failing quietly, and the settings offer **Restart as administrator**. See [Programs that run as administrator](#programs-that-run-as-administrator).
 - **Security keys are left alone.** A YubiKey types its codes as a keyboard, repeating letters a few milliseconds apart, which looks exactly like chatter. Yubico keys are never filtered unless you give them settings of their own.
 - **Hotkey:** <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>F9</kbd> turns filtering on and off from anywhere (not on macOS).
 - **Built-in test.** "Simulate a bounce" sends a fake chatter burst through the real filter and tells you whether it was caught.
 - **Leaves other input alone.** Keystrokes that programs create (macros, remote desktop, on-screen keyboards, input methods) pass through untouched.
-- **Light.** The windows only exist while they are open. Sitting in the tray it uses about 13 MB of memory and no CPU while you aren't typing. The monitor's log is a small fixed buffer in memory that is never saved.
+- **Light.** The windows only exist while they are open. Sitting in the tray it uses about 13 MB of memory and no CPU while you aren't typing (or, with mouse buttons filtered, using the mouse). The monitor's log is a small fixed buffer in memory that is never saved.
 - **Start when I sign in**, optional. Running as administrator, it starts as administrator at sign-in too, without Windows asking each time.
 
 <p align="center">
@@ -46,6 +47,8 @@ Every key press and release goes through one rule engine (`Core/ChatterEngine.cs
 
 With **Protect held keys** on, step 3 works the other way round, like the "defer release" debounce in keyboard firmware: the release is held back for the key's delay. A press that comes back within it is a bounce and is swallowed, so programs saw the key stay down the whole time. Otherwise the release is sent when the delay runs out, with the key's own virtual-key code, scan code and extended flag, so it matches the press exactly. Releases are timed on a high-resolution timer. Any release still waiting is sent when the app quits, so no key is left down. Caps Lock, Num Lock and Scroll Lock are never held back.
 
+Mouse buttons go through the same engine, each with a code of its own (above any scancode) and the mouse delay instead of the keyboard's sensitivity. They never auto-repeat, so step 4 doesn't apply to them. With **Protect held keys** on, a held-back button release is sent with `SendInput` the same way a key's is (when the buttons are swapped in the system settings, the other physical button is sent, because Windows swaps sent clicks as well). The pointer matters too. A press that moved further than the system's drag distance (4 pixels by default) is a drag: its release is held back in full while the pointer keeps moving, so a bounce mid-drag can't drop what's being dragged. A click that stayed on its spot is different: once the pointer moves more than half the drag distance away, its held-back release is sent at once, and that movement waits for it (a millisecond or so), so programs see the click end before the pointer moves on.
+
 The chatter monitor uses one more clue. A bouncing contact makes a "press" that lasts one to five milliseconds, and nobody can press and release a key in under about 15 ms. So a quick re-press (within 100 ms) where either press was that short is reported as chatter that **got through**, even when the gap was longer than the delay. Re-presses up to 20 ms past the delay are reported as **close calls**, which are usually you. Only presses that can't be a finger teach auto-adjust anything.
 
 Keys are stored by physical position (PS/2 scancodes), so an exception for the key right of Caps Lock means the same key on every layout and every operating system.
@@ -54,7 +57,7 @@ Each system has its own way to catch keystrokes before programs get them:
 
 | System | How keys are caught |
 | --- | --- |
-| Windows | A low-level keyboard hook (`WH_KEYBOARD_LL`) on its own high-priority thread, with a watchdog that reinstalls the hook if Windows drops it. Raw Input tells it which keyboard is typing. |
+| Windows | A low-level keyboard hook (`WH_KEYBOARD_LL`) on its own high-priority thread, with a watchdog that reinstalls the hook if Windows drops it. Raw Input tells it which keyboard is typing. With mouse buttons filtered, a low-level mouse hook (`WH_MOUSE_LL`) runs on the same thread: movement and the wheel pass straight through, and the watchdog replaces the mouse hook whenever it reinstalls the keyboard hook, or when nothing came through the mouse hook for 30 seconds. |
 | Linux | Takes exclusive hold of each keyboard (`/dev/input/event*`, `EVIOCGRAB`) and re-sends the keys that pass through a virtual keyboard created with `uinput`. Works under X11, Wayland and on the text console. |
 | macOS | A Quartz event tap (`CGEventTap`) on key-down and key-up events. |
 
@@ -73,7 +76,7 @@ Only the Windows version has been used on real hardware so far. The Linux and ma
 
 ### Programs that run as administrator
 
-Windows keeps programs apart by their rights (User Interface Privilege Isolation): a program without administrator rights can't see the keys typed into a program that runs as administrator, and a low-level keyboard hook is no exception. PAX Chatter Guard normally runs without those rights, so while a program that runs as administrator is in front (some games and their launchers, Task Manager, Registry Editor, an administrator command prompt), nothing typed into it reaches the filter. The chatter monitor sees nothing there either, and the on/off hotkey doesn't work.
+Windows keeps programs apart by their rights (User Interface Privilege Isolation): a program without administrator rights can't see the keys typed into a program that runs as administrator, and a low-level keyboard hook is no exception. PAX Chatter Guard normally runs without those rights, so while a program that runs as administrator is in front (some games and their launchers, Task Manager, Registry Editor, an administrator command prompt), nothing typed into it reaches the filter. The chatter monitor sees nothing there either, and the on/off hotkey doesn't work. With mouse buttons filtered, clicks on such a program's windows are out of reach in the same way.
 
 When that happens, the app says so instead of failing quietly:
 
@@ -95,25 +98,25 @@ Download from **[the latest release](https://github.com/joshpack/PaxChatterGuard
 
 | File | For |
 | --- | --- |
-| `PaxChatterGuard-1.1.0-win-x64.zip` | Windows 10/11, 64-bit. Needs the .NET 10 Runtime. |
-| `PaxChatterGuard-1.1.0-linux-x64.tar.gz` | Linux, 64-bit. **Untested.** Self-contained, nothing else to install. |
-| `PaxChatterGuard-1.1.0-osx-arm64.tar.gz` | Mac with Apple Silicon. **Untested.** Self-contained. |
-| `PaxChatterGuard-1.1.0-osx-x64.tar.gz` | Mac with an Intel processor. **Untested.** Self-contained. |
+| `PaxChatterGuard-1.2.0-win-x64.zip` | Windows 10/11, 64-bit. Needs the .NET 10 Runtime. |
+| `PaxChatterGuard-1.2.0-linux-x64.tar.gz` | Linux, 64-bit. **Untested.** Self-contained, nothing else to install. |
+| `PaxChatterGuard-1.2.0-osx-arm64.tar.gz` | Mac with Apple Silicon. **Untested.** Self-contained. |
+| `PaxChatterGuard-1.2.0-osx-x64.tar.gz` | Mac with an Intel processor. **Untested.** Self-contained. |
 
 ### Windows
 
 1. Install the **[.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)** (x64) if you don't have it. The plain ".NET Runtime" is enough; the ".NET Desktop Runtime" includes it, so that works too.
-2. Unzip `PaxChatterGuard-1.1.0-win-x64.zip` somewhere permanent, for example into `%LOCALAPPDATA%`. It contains one folder, `PaxChatterGuard`. To update, quit the app and replace that folder; your settings live elsewhere and are kept.
+2. Unzip `PaxChatterGuard-1.2.0-win-x64.zip` somewhere permanent, for example into `%LOCALAPPDATA%`. It contains one folder, `PaxChatterGuard`. To update, quit the app and replace that folder; your settings live elsewhere and are kept.
 3. Run `PaxChatterGuard.exe` from that folder. It doesn't need administrator rights, except to filter programs that themselves run as administrator (see [Programs that run as administrator](#programs-that-run-as-administrator)).
 
-The exe isn't code-signed, so SmartScreen may warn the first time: choose **More info → Run anyway**. To check the download in PowerShell: `Get-FileHash PaxChatterGuard-1.1.0-win-x64.zip` and compare it with the `.sha256` file.
+The exe isn't code-signed, so SmartScreen may warn the first time: choose **More info → Run anyway**. To check the download in PowerShell: `Get-FileHash PaxChatterGuard-1.2.0-win-x64.zip` and compare it with the `.sha256` file.
 
 ### Linux (untested)
 
 ```bash
-sha256sum -c PaxChatterGuard-1.1.0-linux-x64.tar.gz.sha256
+sha256sum -c PaxChatterGuard-1.2.0-linux-x64.tar.gz.sha256
 mkdir -p ~/.local/opt
-tar -xzf PaxChatterGuard-1.1.0-linux-x64.tar.gz -C ~/.local/opt
+tar -xzf PaxChatterGuard-1.2.0-linux-x64.tar.gz -C ~/.local/opt
 ~/.local/opt/PaxChatterGuard/PaxChatterGuard
 ```
 
@@ -138,9 +141,9 @@ The tray icon uses the StatusNotifier (AppIndicator) standard. KDE, Xfce, Cinnam
 ### macOS (untested)
 
 ```bash
-shasum -a 256 -c PaxChatterGuard-1.1.0-osx-arm64.tar.gz.sha256
+shasum -a 256 -c PaxChatterGuard-1.2.0-osx-arm64.tar.gz.sha256
 mkdir -p ~/Applications
-tar -xzf PaxChatterGuard-1.1.0-osx-arm64.tar.gz -C ~/Applications
+tar -xzf PaxChatterGuard-1.2.0-osx-arm64.tar.gz -C ~/Applications
 xattr -dr com.apple.quarantine ~/Applications/PaxChatterGuard   # it isn't signed or notarised
 ~/Applications/PaxChatterGuard/PaxChatterGuard
 ```
@@ -172,6 +175,8 @@ On Windows, switching it off removes both the Run value and the task, whichever 
 
 Start at 30 ms. If a letter still doubles now and then, look for it in the **Chatter monitor**: chatter that got through is marked, and **Add to list** gives that key a delay just above the gap it slipped through with. After a while of normal typing, the **suggested delay** next to each key under **Caught keys** takes everything seen on that key into account; press it to use it. (Or set a delay by hand there, or turn on **Auto-adjust**.) If quick double-taps (in games, say) go missing, find them in the monitor as blocked presses and press **Was me**, lower the sensitivity, give that key an exception of 0, or put the game on the pause list.
 
+For mouse buttons, start at the 50 ms mouse delay. If a single click still opens things as if double-clicked, the monitor shows that button's chatter; if your own quick double-clicks go missing, lower the mouse delay or give that button an exception. If a held button lets go by itself in the middle of a drag, turn on **Protect held keys** as well.
+
 Not sure whether to trust the filter yet? Leave filtering off and keep the monitor open for a while: it lists everything the filter *would* have blocked, so you can compare it with what you typed.
 
 ## Hotkey and command line
@@ -198,7 +203,7 @@ Everything you change is saved as JSON:
 | Linux | `~/.config/PaxChatterGuard/settings.json` (or under `$XDG_CONFIG_HOME`) |
 | macOS | `~/.config/PaxChatterGuard/settings.json` |
 
-Main fields: `Enabled`, `GlobalMs` (the sensitivity), `Rules` (scancode → ms, 0 = never filter), `FilterModifiers`, `HotkeyEnabled`, `AutoAdjust`, `AutoMaxMs`, `HoldSafe` (protect held keys, Windows), `PausedPrograms` (exe names that pause filtering, Windows), `Devices` (per-keyboard settings, Windows) and `LinuxDevices` (keyboards to filter on Linux; empty means all). Delete the file to go back to the defaults. The caught-keys list and the chatter monitor's log live in memory only and are never saved.
+Main fields: `Enabled`, `GlobalMs` (the sensitivity), `Rules` (scancode → ms, 0 = never filter; mouse buttons are 65537 to 65541: left, right, middle, back, forward), `FilterModifiers`, `HotkeyEnabled`, `AutoAdjust`, `AutoMaxMs` (also the limit for mouse buttons, so raise it above `MouseMs` for auto-adjust to raise a button's delay), `HoldSafe` (protect held keys and buttons, Windows), `FilterMouse` (also filter mouse buttons, Windows), `MouseMs` (the mouse delay), `PausedPrograms` (exe names that pause filtering, Windows), `Devices` (per-keyboard settings, Windows; mouse buttons always follow the defaults) and `LinuxDevices` (keyboards to filter on Linux; empty means all). Delete the file to go back to the defaults. The caught-keys list and the chatter monitor's log live in memory only and are never saved.
 
 ## Uninstall
 
@@ -218,17 +223,17 @@ cd PaxChatterGuard
 dotnet run -- --safe-test 60          # try it; quits by itself after a minute
 
 # Windows (framework-dependent: needs the .NET 10 Runtime)
-dotnet publish -c Release -r win-x64 --self-contained false -p:Version=1.1.0 -p:DebugType=none -o publish/win-x64
+dotnet publish -c Release -r win-x64 --self-contained false -p:Version=1.2.0 -p:DebugType=none -o publish/win-x64
 
 # Linux and macOS (self-contained)
-dotnet publish -c Release -r linux-x64 --self-contained true -p:Version=1.1.0 -p:DebugType=none -o publish/linux-x64
-dotnet publish -c Release -r osx-arm64 --self-contained true -p:Version=1.1.0 -p:DebugType=none -o publish/osx-arm64
-dotnet publish -c Release -r osx-x64   --self-contained true -p:Version=1.1.0 -p:DebugType=none -o publish/osx-x64
+dotnet publish -c Release -r linux-x64 --self-contained true -p:Version=1.2.0 -p:DebugType=none -o publish/linux-x64
+dotnet publish -c Release -r osx-arm64 --self-contained true -p:Version=1.2.0 -p:DebugType=none -o publish/osx-arm64
+dotnet publish -c Release -r osx-x64   --self-contained true -p:Version=1.2.0 -p:DebugType=none -o publish/osx-x64
 ```
 
 Every target can be built on any of the three systems. If the project sits on a network drive whose clock differs from yours, build with `--no-incremental` so no change is skipped.
 
-The filter rules have their own tests, which feed made-up key presses into the engine and never touch a real keyboard (plus a check of the start-as-administrator task's definition, which registers nothing):
+The filter rules have their own tests, which feed made-up key presses and clicks into the engine and never touch a real keyboard or mouse (plus a check of the start-as-administrator task's definition, which registers nothing):
 
 ```bash
 dotnet run --project tests/EngineTests
@@ -243,9 +248,9 @@ For automated tests of the whole app, the environment variable `PAXCG_ACCEPT_INJ
 | `Program.cs` | Start-up, command-line options, single-instance lock |
 | `App.axaml(.cs)` | Theme, tray icon and menu; creates the windows when needed and frees them when closed |
 | `Core/ChatterEngine.cs` | The filtering rules, held-back releases, the chatter log, caught-key stats, auto-adjust and the on/off hotkey |
-| `Core/KeyCatalog.cs` | Key names by scancode |
+| `Core/KeyCatalog.cs` | Key names by scancode, and the mouse buttons' codes |
 | `Platform/IKeyboardBackend.cs` | The interface each system implements, and the factory that picks one |
-| `Platform/WindowsBackend.cs` | Low-level hook, Raw Input keyboard detection, watchdog, sending held-back releases |
+| `Platform/WindowsBackend.cs` | Low-level keyboard hook (and mouse hook, with mouse buttons on), Raw Input keyboard detection, watchdog, sending held-back releases |
 | `Platform/ForegroundWatcher.cs` | Which program is in front, for the pause list, and whether it runs as administrator (Windows) |
 | `Platform/Elevation.cs` | Whether this app or another program runs as administrator, and starting programs as administrator (Windows) |
 | `Platform/LinuxBackend.cs` | evdev grab and uinput virtual keyboard |

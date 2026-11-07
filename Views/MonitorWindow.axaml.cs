@@ -297,12 +297,13 @@ public partial class MonitorWindow : Window
             _detail.Text = detail;
 
             var sub = new List<string>();
+            var noun = KeyCatalog.NounFor(ev.Key);
             switch (ev.Kind)
             {
                 case ChatterKind.Blocked:
                     sub.Add((ev.Flags & ChatterFlags.HeldOn) != 0 ? "You held it down, so it was let through once it repeated"
-                        : (ev.Flags & ChatterFlags.KeptHeld) != 0 ? "Its release was held back, so programs saw the key stay down"
-                        : $"Under this key's {ev.DelayMs} ms delay, so no program saw it");
+                        : (ev.Flags & ChatterFlags.KeptHeld) != 0 ? $"Its release was held back, so programs saw the {noun} stay down"
+                        : $"Under this {noun}'s {ev.DelayMs} ms delay, so no program saw it");
                     break;
                 case ChatterKind.Slipped:
                     sub.Add(ev.HeldMicros >= 0 && ev.HeldMicros < ChatterEngine.TinyPressMicros
@@ -315,9 +316,10 @@ public partial class MonitorWindow : Window
                     {
                         Exempt.FilterOff => $"Filtering is off; it would have been blocked ({ev.DelayMs} ms delay)",
                         Exempt.Modifier => "Shift, Ctrl, Alt and Win aren't filtered (see the settings)",
-                        Exempt.KeyRule => "This key is set to never be filtered",
+                        Exempt.KeyRule => $"This {noun} is set to never be filtered",
                         Exempt.KeyboardOff => "This keyboard is set to be left alone",
                         Exempt.Paused => $"Paused for a program on the pause list; it would have been blocked ({ev.DelayMs} ms delay)",
+                        Exempt.MouseOff => "Mouse buttons aren't filtered (see the settings)",
                         _ => "Not filtered",
                     });
                     break;
@@ -367,7 +369,7 @@ public partial class MonitorWindow : Window
                     break;
                 }
 
-                case ChatterKind.NotFiltered when ev.Why is Exempt.FilterOff or Exempt.KeyboardOff or Exempt.Paused:
+                case ChatterKind.NotFiltered when ev.Why is Exempt.FilterOff or Exempt.KeyboardOff or Exempt.Paused or Exempt.MouseOff:
                     _action.IsVisible = false;
                     break;
 

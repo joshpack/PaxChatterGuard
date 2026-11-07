@@ -161,7 +161,9 @@ public sealed class GuardService : IDisposable
     {
         // Only testing sets this: it lets keystrokes created by test tools count as real ones.
         var acceptInjected = Environment.GetEnvironmentVariable("PAXCG_ACCEPT_INJECTED") == "1";
-        Engine.Config = Settings.ToConfig(ignoreInjected: !acceptInjected, holdSafeSupported: Backend.SupportsHoldSafe);
+        Engine.Config = Settings.ToConfig(ignoreInjected: !acceptInjected, holdSafeSupported: Backend.SupportsHoldSafe,
+            mouseSupported: Backend.SupportsMouse);
+        Backend.SetMouseFilter(Engine.Config.FilterMouse); // the mouse is only watched while its filter is on
         Backend.SetDeviceFilter(Settings.LinuxDevices.Count > 0 ? Settings.LinuxDevices : null);
         UpdateForegroundWatch();
         Changed?.Invoke();
@@ -180,7 +182,7 @@ public sealed class GuardService : IDisposable
         if (device is not null && profile is null)
         {
             var name = Backend.Seen.FirstOrDefault(d => d.Path == device)?.Name ?? device;
-            Settings.Devices.Add(profile = new DeviceProfile { Id = device, Name = name, GlobalMs = Settings.GlobalMs, Rules = new Dictionary<int, int>(Settings.Rules) });
+            Settings.Devices.Add(profile = new DeviceProfile { Id = device, Name = name, GlobalMs = Settings.GlobalMs, Rules = DeviceProfile.KeysOnly(Settings.Rules) });
         }
 
         var rules = profile?.Rules ?? Settings.Rules;
@@ -194,13 +196,13 @@ public sealed class GuardService : IDisposable
 
     /// <summary>
     /// The exception list a key typed on <paramref name="device"/> follows: that keyboard's own list when it has its own
-    /// settings, otherwise the default list every other keyboard uses.
+    /// settings, otherwise the default list every other keyboard uses. Mouse buttons always follow the default list.
     /// </summary>
-    private Dictionary<int, int> RulesFor(string? device) =>
-        (device is null ? null : Settings.Devices.FirstOrDefault(d => d.Id == device))?.Rules ?? Settings.Rules;
+    private Dictionary<int, int> RulesFor(string? device, int key) =>
+        (device is null || KeyCatalog.IsMouseButton(key) ? null : Settings.Devices.FirstOrDefault(d => d.Id == device))?.Rules ?? Settings.Rules;
 
     /// <summary>The key's own delay in the list it follows, or null when it has none (UI thread).</summary>
-    public int? RuleFor(string? device, int key) => RulesFor(device).TryGetValue(key, out var ms) ? ms : null;
+    public int? RuleFor(string? device, int key) => RulesFor(device, key).TryGetValue(key, out var ms) ? ms : null;
 
     /// <summary>The delay a key typed on <paramref name="device"/> gets right now, in ms (0 = never filtered).</summary>
     public int DelayFor(string? device, int key) => (int)(Engine.Config.ThresholdMicros(key, device) / 1000);
@@ -208,7 +210,7 @@ public sealed class GuardService : IDisposable
     /// <summary>Puts a key on the exception list with its own delay (from the chatter monitor). UI thread.</summary>
     public void SetRule(string? device, int key, int ms)
     {
-        RulesFor(device)[key] = Math.Clamp(ms, 0, 250);
+        RulesFor(device, key)[key] = Math.Clamp(ms, 0, 250);
         Settings.Save();
         ApplyConfig();
         RulesChanged?.Invoke();

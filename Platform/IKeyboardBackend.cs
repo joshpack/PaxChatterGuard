@@ -47,6 +47,15 @@ public interface IKeyboardBackend : IDisposable
     /// <see cref="Verdict.Defer"/> and <see cref="Verdict.Replay"/> and sends what <see cref="ChatterEngine.TakeDueReleases"/> hands it.
     /// </summary>
     bool SupportsHoldSafe => false;
+
+    /// <summary>Whether this backend can filter mouse buttons too (<see cref="SetMouseFilter"/>).</summary>
+    bool SupportsMouse => false;
+
+    /// <summary>
+    /// Watches the mouse buttons (on) or leaves the mouse completely alone (off, the default). Any thread, also before
+    /// <see cref="Start"/>; the backend remembers it.
+    /// </summary>
+    void SetMouseFilter(bool on) { }
 }
 
 public static class BackendFactory

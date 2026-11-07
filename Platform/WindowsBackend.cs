@@ -12,18 +12,32 @@ namespace PaxChatterGuard.Platform;
 /// Windows: a low-level keyboard hook (WH_KEYBOARD_LL) on its own thread with its own message loop. The hook callback does
 /// almost nothing but ask the engine, because Windows silently drops a hook that answers too slowly. A watchdog checks the
 /// hook is still alive and reinstalls it if it isn't.
+/// <para>
+/// With mouse buttons switched on, a low-level mouse hook (WH_MOUSE_LL) runs on the same thread. Only button events go to
+/// the engine; movement and the wheel go straight on. With the setting off, no mouse hook is installed at all.
+/// </para>
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed unsafe class WindowsBackend : IKeyboardBackend
 {
     private const int WH_KEYBOARD_LL = 13;
+    private const int WH_MOUSE_LL = 14;
     private const int HC_ACTION = 0;
     private const int WM_KEYDOWN = 0x0100;
     private const int WM_SYSKEYDOWN = 0x0104;
+    private const int WM_MOUSEMOVE = 0x0200;
+    private const int WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202, WM_RBUTTONDOWN = 0x0204, WM_RBUTTONUP = 0x0205;
+    private const int WM_MBUTTONDOWN = 0x0207, WM_MBUTTONUP = 0x0208, WM_XBUTTONDOWN = 0x020B, WM_XBUTTONUP = 0x020C;
     private const uint WM_QUIT = 0x0012;
     private const uint WM_REINSTALL = 0x8001;
+    private const uint WM_MOUSEHOOK = 0x8002;   // match the mouse hook to the setting; wParam 1 = replace it as well
     private const uint LLKHF_EXTENDED = 0x01;
     private const uint LLKHF_INJECTED = 0x10;
+    private const uint LLMHF_INJECTED = 0x01;
+    private const int SM_SWAPBUTTON = 23, SM_CXDRAG = 68, SM_CYDRAG = 69;
+
+    // Mouse messages that a pen or touch screen made carry this in dwExtraInfo (MI_WP_SIGNATURE under SIGNATURE_MASK).
+    private const long PenTouchMask = 0xFFFFFF00, PenTouchSignature = 0xFF515700;
 
     // Markers we put in dwExtraInfo of the keystrokes we create ourselves, so the hook knows them when they come back.
     private const long SelfTestMagic = 0x50415832;  // simulated chatter
@@ -39,6 +53,15 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
     // The virtual-key code each key last went down with, so a release we send matches the press exactly (by scan code
     // alone, Shift+numpad and similar keys can come out as a different key and stay stuck down).
     private readonly ushort[] _vk = new ushort[0x200];
+
+    // Mouse buttons, while their filter is on: the mouse hook, on the hook thread. A click's held-back release that must
+    // go out before the pointer moves on is handed to the release thread through _releaseNow.
+    private IntPtr _mouseHook;
+    private HookProc? _mouseProc;
+    private volatile bool _wantMouse;
+    private volatile bool _mouseSeen;   // the mouse hook was called since the watchdog last looked
+    private readonly ConcurrentQueue<int> _releaseNow = new();
+    private readonly List<int> _early = new(); // hook thread only
 
     private ChatterEngine? _engine;
     private Thread? _hookThread;
@@ -62,12 +85,23 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
     public string Name => "Windows keyboard hook";
     public bool IsRunning => _running;
     public bool SupportsHoldSafe => true;
+    public bool SupportsMouse => true;
     public string? SetupHint => null;
     public IReadOnlyList<KeyboardDevice> Devices => Array.Empty<KeyboardDevice>();
     public IReadOnlyList<KeyboardDevice> Seen => _seen.Values.OrderBy(d => d.Name).ToList();
     public event Action<string>? Notice;
 
     public void SetDeviceFilter(IReadOnlyCollection<string>? names) { }
+
+    public void SetMouseFilter(bool on)
+    {
+        if (_wantMouse == on)
+            return;
+        _wantMouse = on;
+        // Before Start the hook thread picks it up when it starts; after Stop there is nothing to change.
+        if (_running && _hookThreadId != 0)
+            PostThreadMessage(_hookThreadId, WM_MOUSEHOOK, IntPtr.Zero, IntPtr.Zero);
+    }
 
     public string? Start(ChatterEngine engine)
     {
@@ -110,8 +144,10 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
         _flushThread?.Join(500);
         _watchdogThread?.Join(500);
 
-        // Never leave a key down in programs: with the hook gone (so nothing new can be held back), send every release
-        // that is still waiting.
+        // Never leave a key or button down in programs: with the hooks gone (so nothing new can be held back), send every
+        // release that is still waiting, including a click's release handed over a moment ago.
+        while (_releaseNow.TryDequeue(out var early))
+            SendRelease(early, thenPress: false);
         if (_engine is not null)
             foreach (var key in _engine.TakeDueReleases(0, all: true))
                 SendRelease(key, thenPress: false);
@@ -125,6 +161,7 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
     {
         _hookThreadId = GetCurrentThreadId();
         _proc = HookCallback;
+        _mouseProc = MouseCallback;
         if (!Install())
         {
             _startError = $"Windows refused to install the keyboard hook (error {Marshal.GetLastWin32Error()}).";
@@ -132,6 +169,7 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
             return;
         }
 
+        UpdateMouseHook(renew: false);
         CreateRawInputWindow();
         _ready.Set();
         while (GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
@@ -142,6 +180,14 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
                     UnhookWindowsHookEx(_hook);
                 _hook = IntPtr.Zero;
                 Install();
+                // The mouse hook lives on this thread too: whatever made Windows drop one may well have dropped the other.
+                UpdateMouseHook(renew: true);
+                continue;
+            }
+
+            if (msg.message == WM_MOUSEHOOK)
+            {
+                UpdateMouseHook(renew: msg.wParam != UIntPtr.Zero);
                 continue;
             }
 
@@ -152,9 +198,33 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
         if (_rawWindow != IntPtr.Zero)
             DestroyWindow(_rawWindow);
         _rawWindow = IntPtr.Zero;
+        if (_mouseHook != IntPtr.Zero)
+            UnhookWindowsHookEx(_mouseHook);
+        _mouseHook = IntPtr.Zero;
         if (_hook != IntPtr.Zero)
             UnhookWindowsHookEx(_hook);
         _hook = IntPtr.Zero;
+    }
+
+    /// <summary>
+    /// Installs or removes the mouse hook to match the setting; with <paramref name="renew"/>, an installed one is replaced
+    /// too (Windows may have dropped it without a word). Hook thread only.
+    /// </summary>
+    private void UpdateMouseHook(bool renew)
+    {
+        if (_mouseHook != IntPtr.Zero && (renew || !_wantMouse))
+        {
+            UnhookWindowsHookEx(_mouseHook);
+            _mouseHook = IntPtr.Zero;
+        }
+
+        if (!_wantMouse || _mouseHook != IntPtr.Zero)
+            return;
+
+        // The system's drag rectangle tells a click from a drag (protect held keys); read it fresh each time.
+        _engine!.DragDistance = (Math.Max(2, GetSystemMetrics(SM_CXDRAG)), Math.Max(2, GetSystemMetrics(SM_CYDRAG)));
+        _mouseHook = SetWindowsHookEx(WH_MOUSE_LL, _mouseProc!, GetModuleHandle(null), 0);
+        // If Windows refused, the watchdog sees no mouse activity this round and tries again.
     }
 
     // ---- Raw Input: which keyboard ---------------------------------------------------------------------------------
@@ -305,12 +375,109 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
         return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
     }
 
+    /// <summary>
+    /// The mouse hook. Only button events go to the engine. Movement goes straight on, unless protect-held-keys mode has a
+    /// button down to look after (see <see cref="ChatterEngine.OnPointerMove"/>); the wheel always does.
+    /// </summary>
+    private IntPtr MouseCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        _mouseSeen = true;
+        if (nCode != HC_ACTION)
+            return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+
+        try
+        {
+            var msg = (int)wParam;
+            var m = (MSLLHOOKSTRUCT*)lParam;
+            if (msg == WM_MOUSEMOVE)
+            {
+                if (!_engine!.WatchesPointer)
+                    return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+
+                _early.Clear();
+                if (_engine.OnPointerMove(m->pt.x, m->pt.y, NowMicros(), _early))
+                {
+                    // A click's held-back release has to reach programs before the pointer leaves the spot, or they
+                    // would see a short drag: hold this movement back and send the release first.
+                    foreach (var key in _early)
+                        _releaseNow.Enqueue(key);
+                    if (_early.Count > 0)
+                        _flushWake.Set();
+                    return (IntPtr)1;
+                }
+
+                return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+            }
+
+            int button;
+            bool down;
+            switch (msg)
+            {
+                case WM_LBUTTONDOWN: button = KeyCatalog.MouseLeft; down = true; break;
+                case WM_LBUTTONUP: button = KeyCatalog.MouseLeft; down = false; break;
+                case WM_RBUTTONDOWN: button = KeyCatalog.MouseRight; down = true; break;
+                case WM_RBUTTONUP: button = KeyCatalog.MouseRight; down = false; break;
+                case WM_MBUTTONDOWN: button = KeyCatalog.MouseMiddle; down = true; break;
+                case WM_MBUTTONUP: button = KeyCatalog.MouseMiddle; down = false; break;
+                case WM_XBUTTONDOWN or WM_XBUTTONUP:
+                    switch (m->mouseData >> 16)
+                    {
+                        case 1: button = KeyCatalog.MouseBack; break;
+                        case 2: button = KeyCatalog.MouseForward; break;
+                        default: return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+                    }
+
+                    down = msg == WM_XBUTTONDOWN;
+                    break;
+                default:
+                    return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam); // the wheel and anything else
+            }
+
+            var extra = (long)m->dwExtraInfo;
+
+            // A release (or release + press) we sent for a held-back button: the engine notes it, programs get it.
+            if (extra == ReleaseMagic)
+            {
+                _engine!.OnKey(new KeyEvent(button, down, NowMicros(), Injected: true, Replayed: true));
+                return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+            }
+
+            // Clicks other programs create (macros, remote desktop) are left alone, and so are taps on a touch screen or
+            // with a pen: neither is a worn switch.
+            var injected = (m->flags & LLMHF_INJECTED) != 0;
+            if ((injected && _engine!.Config.IgnoreInjected) || (extra & PenTouchMask) == PenTouchSignature)
+                return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+
+            switch (_engine!.OnKey(new KeyEvent(button, down, NowMicros(), injected, X: m->pt.x, Y: m->pt.y)))
+            {
+                case Verdict.Pass:
+                    break;
+                case Verdict.Defer:
+                    _flushWake.Set(); // a release is now waiting; make sure the timer knows when it's due
+                    return (IntPtr)1;
+                case Verdict.Replay:
+                    _replays.Enqueue(button);
+                    _flushWake.Set();
+                    return (IntPtr)1;
+                default:
+                    return (IntPtr)1;
+            }
+        }
+        catch
+        {
+            // Never let an error escape into Windows; letting the click through is always the safe choice.
+        }
+
+        return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+    }
+
     // ---- Watchdog ------------------------------------------------------------------------------------------------
 
     private void WatchdogMain()
     {
         while (_running)
         {
+            _mouseSeen = false;
             for (var i = 0; i < 300 && _running; i++)
                 Thread.Sleep(100); // every 30 s
             if (!_running)
@@ -324,7 +491,14 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
             if (Volatile.Read(ref _lastProbeSeen) == before && _running)
             {
                 Notice?.Invoke("Windows removed the keyboard hook; it was reinstalled.");
-                PostThreadMessage(_hookThreadId, WM_REINSTALL, IntPtr.Zero, IntPtr.Zero);
+                PostThreadMessage(_hookThreadId, WM_REINSTALL, IntPtr.Zero, IntPtr.Zero); // the mouse hook too
+            }
+            else if (_wantMouse && !_mouseSeen && _running)
+            {
+                // Windows drops a mouse hook that answers too slowly just the same, and the mouse hook, called for every
+                // movement, is the likelier one to be hit. Nothing at all came through it for a whole round: replace it.
+                // If the mouse simply wasn't touched, that costs nothing.
+                PostThreadMessage(_hookThreadId, WM_MOUSEHOOK, (IntPtr)1, IntPtr.Zero);
             }
         }
     }
@@ -354,6 +528,9 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
         {
             while (_running)
             {
+                // First a click's release the pointer is waiting on (its movement is held back until it's through).
+                while (_releaseNow.TryDequeue(out var early))
+                    SendRelease(early, thenPress: false);
                 while (_replays.TryDequeue(out var replay))
                     SendRelease(replay, thenPress: true);
                 foreach (var key in _engine!.TakeDueReleases(NowMicros()))
@@ -403,6 +580,12 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
     /// </summary>
     private void SendRelease(int key, bool thenPress)
     {
+        if (KeyCatalog.IsMouseButton(key))
+        {
+            SendButton(key, thenPress);
+            return;
+        }
+
         const uint KEYEVENTF_EXTENDEDKEY = 0x1, KEYEVENTF_KEYUP = 0x2;
         var scan = (ushort)(key & 0xFF);
         var extended = (key & 0xE000) != 0;
@@ -414,6 +597,31 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
         var flags = extended ? KEYEVENTF_EXTENDEDKEY : 0u;
         inputs[0] = new INPUT { type = 1, u = new INPUTUNION { ki = new KEYBDINPUT { wVk = vk, wScan = scan, dwFlags = flags | KEYEVENTF_KEYUP, dwExtraInfo = (UIntPtr)(ulong)ReleaseMagic } } };
         inputs[1] = new INPUT { type = 1, u = new INPUTUNION { ki = new KEYBDINPUT { wVk = vk, wScan = scan, dwFlags = flags, dwExtraInfo = (UIntPtr)(ulong)ReleaseMagic } } };
+        SendInput(thenPress ? 2u : 1u, inputs, sizeof(INPUT));
+    }
+
+    /// <summary>
+    /// Sends a mouse button's release (and, with <paramref name="thenPress"/>, a press right after it, in one go) where the
+    /// pointer is. The hook reports the primary button as the left one; when the buttons are swapped in the system settings,
+    /// Windows swaps sent clicks as well, so the other physical button is sent to come out as the same one.
+    /// </summary>
+    private static void SendButton(int key, bool thenPress)
+    {
+        const uint LEFTDOWN = 0x0002, LEFTUP = 0x0004, RIGHTDOWN = 0x0008, RIGHTUP = 0x0010;
+        const uint MIDDLEDOWN = 0x0020, MIDDLEUP = 0x0040, XDOWN = 0x0080, XUP = 0x0100;
+        var swapped = GetSystemMetrics(SM_SWAPBUTTON) != 0;
+        var (up, press, data) = key switch
+        {
+            KeyCatalog.MouseLeft => swapped ? (RIGHTUP, RIGHTDOWN, 0u) : (LEFTUP, LEFTDOWN, 0u),
+            KeyCatalog.MouseRight => swapped ? (LEFTUP, LEFTDOWN, 0u) : (RIGHTUP, RIGHTDOWN, 0u),
+            KeyCatalog.MouseMiddle => (MIDDLEUP, MIDDLEDOWN, 0u),
+            KeyCatalog.MouseBack => (XUP, XDOWN, 1u),    // XBUTTON1
+            _ => (XUP, XDOWN, 2u),                       // XBUTTON2
+        };
+
+        var inputs = stackalloc INPUT[2];
+        inputs[0] = new INPUT { type = 0, u = new INPUTUNION { mi = new MOUSEINPUT { mouseData = data, dwFlags = up, dwExtraInfo = (UIntPtr)(ulong)ReleaseMagic } } };
+        inputs[1] = new INPUT { type = 0, u = new INPUTUNION { mi = new MOUSEINPUT { mouseData = data, dwFlags = press, dwExtraInfo = (UIntPtr)(ulong)ReleaseMagic } } };
         SendInput(thenPress ? 2u : 1u, inputs, sizeof(INPUT));
     }
 
@@ -471,6 +679,22 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
     {
         public uint vkCode;
         public uint scanCode;
+        public uint flags;
+        public uint time;
+        public UIntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT
+    {
+        public int x, y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MSLLHOOKSTRUCT
+    {
+        public POINT pt;
+        public uint mouseData;
         public uint flags;
         public uint time;
         public UIntPtr dwExtraInfo;
@@ -608,6 +832,9 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
 
     [DllImport("user32.dll")]
     private static extern uint MapVirtualKey(uint code, uint mapType);
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
 
     private const uint CREATE_WAITABLE_TIMER_HIGH_RESOLUTION = 0x2;
     private const uint TIMER_ALL_ACCESS = 0x1F0003;

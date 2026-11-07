@@ -66,7 +66,7 @@
               <ToggleSwitch x:Name="KbOnSwitch" Grid.Column="1" OnContent="" OffContent="" />
             </Grid>
             <TextBlock x:Name="KbNote" Classes="muted" FontSize="11" TextWrapping="Wrap"
-                       Text="Every setting below (sensitivity, exceptions, caught keys) applies to the keyboard chosen here. A keyboard that has never been changed follows All keyboards." />
+                       Text="The sensitivity, caught keys and exceptions below apply to the keyboard chosen here. A keyboard that has never been changed follows All keyboards, and so do mouse buttons." />
           </StackPanel>
         </Border>
 
@@ -115,6 +115,29 @@
           </StackPanel>
         </Border>
 
+        <!-- Windows: mouse buttons, with a delay of their own -->
+        <Border x:Name="MouseCard" Classes="card" Padding="16" IsVisible="False">
+          <StackPanel Spacing="12">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+              <StackPanel Spacing="1">
+                <TextBlock Text="Also filter mouse buttons" FontWeight="SemiBold" FontSize="14" />
+                <TextBlock Text="Drops a click that comes back too soon after letting go, a worn switch double-clicking. Left, right, middle and the two side buttons. While this is off, the mouse isn't watched at all."
+                           Classes="muted" FontSize="11" TextWrapping="Wrap" />
+              </StackPanel>
+              <ToggleSwitch x:Name="MouseSwitch" Grid.Column="1" OnContent="" OffContent="" VerticalAlignment="Center" />
+            </Grid>
+            <StackPanel x:Name="MousePanel" Spacing="12" IsVisible="False">
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="MOUSE DELAY" Classes="label" VerticalAlignment="Center" />
+                <TextBlock x:Name="MouseMsText" Grid.Column="1" Foreground="#19F58C" FontWeight="Bold" />
+              </Grid>
+              <Slider x:Name="MouseSlider" Minimum="5" Maximum="150" TickFrequency="1" IsSnapToTickEnabled="True" />
+              <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                         Text="A click is dropped if the same button was let go less than this long ago. Start at 50 ms; lower it if quick double-clicks go missing. One button can have its own delay under Exceptions (with All keyboards chosen). If a held button lets go by itself and drops what you're dragging, also turn on Protect held keys below." />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
         <Border Classes="card" Padding="16">
           <StackPanel Spacing="12">
             <Grid ColumnDefinitions="*,Auto">
@@ -125,6 +148,8 @@
               <StackPanel Spacing="1" VerticalAlignment="Center">
                 <TextBlock Text="Protect held keys" />
                 <TextBlock Text="Holds each release back by the key's delay, so a bounce can't let go of a key you're holding (games). Letting go reaches programs that much later." Classes="muted" FontSize="11" TextWrapping="Wrap" />
+                <TextBlock x:Name="HoldSafeMouseNote" IsVisible="False" Classes="muted" FontSize="11" TextWrapping="Wrap"
+                           Text="Mouse buttons too: a held button or a drag can't let go by itself. A click's release still goes out the moment the mouse moves, so a click never turns into a drag." />
               </StackPanel>
               <ToggleSwitch x:Name="HoldSafeSwitch" Grid.Column="1" OnContent="" OffContent="" />
             </Grid>

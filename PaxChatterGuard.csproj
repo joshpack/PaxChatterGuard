@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>PaxChatterGuard</RootNamespace>
     <AssemblyName>PaxChatterGuard</AssemblyName>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Keep memory low: no background GC thread, no profile-guided tiering, no ICU culture data. -->

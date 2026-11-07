@@ -14,6 +14,10 @@ public sealed class DeviceProfile
 
     public int GlobalMs { get; set; } = 30;
     public Dictionary<int, int> Rules { get; set; } = new();
+
+    /// <summary>A copy of an exception list for a keyboard's own settings: mouse buttons stay in the default list only.</summary>
+    public static Dictionary<int, int> KeysOnly(Dictionary<int, int> rules) =>
+        rules.Where(kv => !KeyCatalog.IsMouseButton(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
 }
 
 /// <summary>The few things the user can change, saved as JSON in the per-user app-data folder.</summary>
@@ -39,6 +43,12 @@ public sealed class GuardSettings
 
     /// <summary>Protect held keys: hold each release back by the key's delay so a bounce can't break a held key (Windows).</summary>
     public bool HoldSafe { get; set; }
+
+    /// <summary>Also filter mouse buttons (Windows). While off, the mouse isn't watched at all.</summary>
+    public bool FilterMouse { get; set; }
+
+    /// <summary>Milliseconds for mouse buttons: a click this soon after letting go of the same button counts as chatter.</summary>
+    public int MouseMs { get; set; } = 50;
 
     /// <summary>Programs (exe file names) that pause filtering while they are in front (Windows).</summary>
     public List<string> PausedPrograms { get; set; } = new();
@@ -105,8 +115,11 @@ public sealed class GuardSettings
         }
     }
 
-    /// <summary>The engine's immutable view of these settings. Protect-held-keys only applies where the backend supports it.</summary>
-    public GuardConfig ToConfig(bool ignoreInjected = true, bool holdSafeSupported = false) => new()
+    /// <summary>
+    /// The engine's immutable view of these settings. Protect-held-keys and mouse buttons only apply where the backend
+    /// supports them.
+    /// </summary>
+    public GuardConfig ToConfig(bool ignoreInjected = true, bool holdSafeSupported = false, bool mouseSupported = false) => new()
     {
         GlobalMs = Math.Clamp(GlobalMs, 0, 250),
         FilterModifiers = FilterModifiers,
@@ -115,6 +128,8 @@ public sealed class GuardSettings
         IgnoreInjected = ignoreInjected,
         HotkeyEnabled = HotkeyEnabled,
         HoldSafe = HoldSafe && holdSafeSupported,
+        FilterMouse = FilterMouse && mouseSupported,
+        MouseMs = Math.Clamp(MouseMs, 0, 250),
         Rules = Rules.ToDictionary(kv => kv.Key, kv => new KeyRule(Math.Clamp(kv.Value, 0, 250))),
         Devices = Devices.Where(d => d.Id.Length > 0).GroupBy(d => d.Id).ToDictionary(g => g.Key, g =>
             new DeviceCfg(g.First().Enabled, Math.Clamp(g.First().GlobalMs, 0, 250),

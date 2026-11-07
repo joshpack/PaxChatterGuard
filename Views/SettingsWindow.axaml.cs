@@ -34,7 +34,7 @@ public partial class SettingsWindow : Window
             return;
         var name = _svc.Backend.Seen.FirstOrDefault(d => d.Path == _dev)?.Name ?? _dev;
         // A security key (YubiKey) starts out left alone, as it is without settings of its own.
-        _svc.Settings.Devices.Add(new DeviceProfile { Id = _dev, Name = name, Enabled = !GuardConfig.IsTokenDevice(_dev), GlobalMs = _svc.Settings.GlobalMs, Rules = new Dictionary<int, int>(_svc.Settings.Rules) });
+        _svc.Settings.Devices.Add(new DeviceProfile { Id = _dev, Name = name, Enabled = !GuardConfig.IsTokenDevice(_dev), GlobalMs = _svc.Settings.GlobalMs, Rules = DeviceProfile.KeysOnly(_svc.Settings.Rules) });
         Ctl<Button>("KbResetButton").IsVisible = true;
     }
 
@@ -108,6 +108,11 @@ public partial class SettingsWindow : Window
         Ctl<ToggleSwitch>("ModifiersSwitch").IsChecked = s.FilterModifiers;
         Ctl<ToggleSwitch>("HoldSafeSwitch").IsChecked = s.HoldSafe;
         Ctl<Grid>("HoldSafeRow").IsVisible = _svc.Backend.SupportsHoldSafe;
+        Ctl<Border>("MouseCard").IsVisible = _svc.Backend.SupportsMouse;
+        Ctl<ToggleSwitch>("MouseSwitch").IsChecked = s.FilterMouse;
+        Ctl<Slider>("MouseSlider").Value = Math.Clamp(s.MouseMs, 5, 150);
+        Ctl<TextBlock>("MouseMsText").Text = $"{s.MouseMs} ms";
+        ShowMouse();
         Ctl<Border>("PauseCard").IsVisible = OperatingSystem.IsWindows();
         BuildPrograms();
         Ctl<ToggleSwitch>("HotkeySwitch").IsChecked = s.HotkeyEnabled;
@@ -117,10 +122,7 @@ public partial class SettingsWindow : Window
         ShowAutostart(null);
         Ctl<TextBlock>("BlockedText").Text = BlockedLine();
 
-        var keys = Ctl<ComboBox>("KeyBox");
-        foreach (var (code, name) in KeyCatalog.All)
-            keys.Items.Add(new ComboBoxItem { Content = name, Tag = code });
-
+        BuildKeyBox();
         BuildRules();
         BuildDevices();
         RefreshKeyboards();
@@ -168,6 +170,7 @@ public partial class SettingsWindow : Window
         Ctl<Grid>("KbOnRow").IsVisible = _dev is not null;
         Ctl<ToggleSwitch>("KbOnSwitch").IsChecked = Prof?.Enabled ?? !GuardConfig.IsTokenDevice(_dev);
         Ctl<Button>("KbResetButton").IsVisible = Prof is not null;
+        BuildKeyBox();
         BuildRules();
         _caughtRows.Clear();
         Ctl<StackPanel>("CaughtList").Children.Clear();
@@ -203,6 +206,20 @@ public partial class SettingsWindow : Window
 
         Bind("ModifiersSwitch", v => _svc.Settings.FilterModifiers = v);
         Bind("HoldSafeSwitch", v => _svc.Settings.HoldSafe = v);
+        Bind("MouseSwitch", v =>
+        {
+            _svc.Settings.FilterMouse = v;
+            ShowMouse();
+            BuildKeyBox();
+        });
+        Ctl<Slider>("MouseSlider").ValueChanged += (_, e) =>
+        {
+            Ctl<TextBlock>("MouseMsText").Text = $"{(int)e.NewValue} ms";
+            if (_loading)
+                return;
+            _svc.Settings.MouseMs = (int)e.NewValue;
+            Changed();
+        };
 
         if (OperatingSystem.IsWindows())
         {
@@ -439,6 +456,32 @@ public partial class SettingsWindow : Window
         BuildRules();
     }
 
+    /// <summary>Whether mouse buttons are filtered (Windows), so their delay and exceptions are worth showing.</summary>
+    private bool MouseOn => _svc.Backend.SupportsMouse && _svc.Settings.FilterMouse;
+
+    /// <summary>
+    /// The keys an exception can be added for: every key, plus the mouse buttons while those are filtered and the default
+    /// list is shown (buttons always follow the default list, never a keyboard's own).
+    /// </summary>
+    private void BuildKeyBox()
+    {
+        var box = Ctl<ComboBox>("KeyBox");
+        var chosen = (box.SelectedItem as ComboBoxItem)?.Tag;
+        box.Items.Clear();
+        var keys = _dev is null && MouseOn ? KeyCatalog.All.Concat(KeyCatalog.MouseButtons) : KeyCatalog.All;
+        foreach (var (code, name) in keys)
+            box.Items.Add(new ComboBoxItem { Content = name, Tag = code });
+        box.SelectedItem = box.Items.OfType<ComboBoxItem>().FirstOrDefault(i => Equals(i.Tag, chosen));
+        box.PlaceholderText = _dev is null && MouseOn ? "Choose a key or button…" : "Choose a key…";
+    }
+
+    /// <summary>Shows the mouse delay, and what protecting held keys does for buttons, only while buttons are filtered.</summary>
+    private void ShowMouse()
+    {
+        Ctl<StackPanel>("MousePanel").IsVisible = MouseOn;
+        Ctl<TextBlock>("HoldSafeMouseNote").IsVisible = MouseOn;
+    }
+
     // ---- Caught keys ---------------------------------------------------------------------------------------------
 
     private sealed record CaughtRow(TextBlock Info, NumericUpDown Delay, Button Suggest, TextBlock Fits);
@@ -448,9 +491,13 @@ public partial class SettingsWindow : Window
     /// <summary>A non-breaking space: keeps a number with its unit when a line wraps.</summary>
     private const char Nbsp = (char)0xA0;
 
-    /// <summary>The delay a key really gets in the list being edited (Shift, Ctrl, Alt and Win get none unless filtered).</summary>
+    /// <summary>
+    /// The delay a key really gets in the list being edited (Shift, Ctrl, Alt and Win get none unless filtered; mouse
+    /// buttons get the mouse delay while they are filtered, none otherwise).
+    /// </summary>
     private int EffectiveDelay(int key) =>
         CurRules.TryGetValue(key, out var own) ? own
+        : KeyCatalog.IsMouseButton(key) ? MouseOn ? _svc.Settings.MouseMs : 0
         : KeyCatalog.IsModifier(key) && !_svc.Settings.FilterModifiers ? 0
         : CurMs;
 
