@@ -3,7 +3,7 @@
 **Stops a worn mechanical keyboard from typing double letters.** A small tray app that catches key chatter (one press that the switch reports as two) and drops the extra press before any program sees it.
 
 <p align="center">
-  <img src="docs/screenshots/settings.png" width="500" alt="PAX Chatter Guard settings window: filtering on, 30 ms sensitivity, and a list of keys whose chatter was caught">
+  <img src="docs/screenshots/settings.png" width="500" alt="PAX Chatter Guard settings window on its Filter tab: keyboard picker, filtering on, 30 ms sensitivity and the Try it test">
 </p>
 
 When a key goes down again only a few milliseconds after it was released, that is almost never a person: real fast typing leaves about 50 ms between letting go of a key and pressing it again, while a bouncing switch does it in about 10. PAX Chatter Guard sits between the keyboard and everything else and throws away presses that come back too soon.
@@ -32,9 +32,11 @@ When a key goes down again only a few milliseconds after it was released, that i
   <img src="docs/screenshots/monitor.png" width="560" alt="The chatter monitor: totals for blocked, got through, not filtered and close calls, then a list of keys such as I blocked 5 ms after letting go, D got through with a 4 ms press and an Add to list · 46 ms button, and Space blocked with a Was me button">
 </p>
 
-| One keyboard with its own settings | The whole settings window |
-| --- | --- |
-| <img src="docs/screenshots/per-keyboard.png" width="400" alt="One keyboard chosen, with its own 38 ms sensitivity, its own on/off switch and a Use default button"> | <img src="docs/screenshots/settings-full.png" width="400" alt="The full settings window: sensitivity, caught keys, exceptions, options including Protect held keys, the pause list and the Try it test"> |
+The settings have three tabs: **Filter** (on/off, sensitivity, mouse buttons, the test), **Keys** (caught keys with their suggested delays, and exceptions) and **Options** (everything else). The keyboard picker above them applies to all three. Hover over a setting for the details.
+
+| Keys tab | Options tab | One keyboard with its own settings |
+| --- | --- | --- |
+| <img src="docs/screenshots/settings-keys.png" width="300" alt="The Keys tab: caught keys, each with what happened and the delay that suits it best, and a Suggested 10 ms · use button for Left Shift"> | <img src="docs/screenshots/settings-options.png" width="300" alt="The Options tab: modifier keys, Protect held keys, auto-adjust, the hotkey, start when I sign in, and the pause list"> | <img src="docs/screenshots/per-keyboard.png" width="300" alt="One keyboard chosen above the tabs, with its own 38 ms sensitivity, its own on/off switch and a Use default button"> |
 
 ## How it works
 

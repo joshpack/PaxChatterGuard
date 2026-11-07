@@ -412,7 +412,7 @@ public partial class SettingsWindow : Window
         list.Children.Clear();
         foreach (var (key, ms) in CurRules.OrderBy(kv => KeyCatalog.NameOf(kv.Key), StringComparer.OrdinalIgnoreCase).ToList())
         {
-            var number = new NumericUpDown { Minimum = 0, Maximum = 250, Value = ms, FormatString = "0", Width = 130, MinHeight = 32 };
+            var number = new NumericUpDown { Minimum = 0, Maximum = 250, Value = ms, FormatString = "0", Width = 104, MinHeight = 32 };
             var k = key;
             number.ValueChanged += (_, e) =>
             {
@@ -515,7 +515,7 @@ public partial class SettingsWindow : Window
             {
                 var key = c.Key;
                 var info = new TextBlock { Classes = { "muted" }, FontSize = 11, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Right };
-                var delay = new NumericUpDown { Minimum = 0, Maximum = 250, Value = EffectiveDelay(key), FormatString = "0", Width = 130, MinHeight = 32, VerticalAlignment = VerticalAlignment.Center };
+                var delay = new NumericUpDown { Minimum = 0, Maximum = 250, Value = EffectiveDelay(key), FormatString = "0", Width = 104, MinHeight = 32, VerticalAlignment = VerticalAlignment.Center };
                 delay.ValueChanged += (_, e) =>
                 {
                     if (_loading || e.NewValue is not { } v)
@@ -574,20 +574,19 @@ public partial class SettingsWindow : Window
             row.Suggest.Tag = best;
             row.Suggest.Content = $"Suggested {best}{Nbsp}ms · use";
             row.Fits.IsVisible = best == current;
-            row.Fits.Text = best == 0 ? "✓ suggested: not filtered" : $"✓ suggested {best}{Nbsp}ms";
+            row.Fits.Text = best == 0 ? "✓ best left unfiltered" : $"✓ {best}{Nbsp}ms is best";
             ToolTip.SetTip(row.Suggest, why);
             ToolTip.SetTip(row.Fits, why);
-        }
 
-        foreach (var c in caught)
-        {
+            // One short line of what happened; the full story is in the chatter monitor.
             var parts = new List<string>();
-            parts.Add(c.Count > 0 ? $"blocked {c.Count}× (up to {c.LongestGapMs}{Nbsp}ms)" : "none blocked");
+            if (c.Count > 0)
+                parts.Add($"{c.Count} blocked, up to {c.LongestGapMs}{Nbsp}ms");
             if (c.Slipped > 0)
-                parts.Add($"{c.Slipped} got through");
+                parts.Add($"{c.Slipped} slipped");
             if (c.ShortestPassedMs > 0)
-                parts.Add(c.Count > 0 ? $"closest let through {c.ShortestPassedMs}{Nbsp}ms" : $"closest re-press {c.ShortestPassedMs}{Nbsp}ms");
-            _caughtRows[c.Key].Info.Text = string.Join(" · ", parts);
+                parts.Add($"closest {c.ShortestPassedMs}{Nbsp}ms");
+            row.Info.Text = string.Join(" · ", parts);
         }
     }
 
