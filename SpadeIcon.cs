@@ -15,42 +15,6 @@ public static class SpadeIcon
 
     public static readonly Geometry Geometry = Geometry.Parse(PathData);
 
-    /// <summary>Renders the app icon (X on a rounded accent tile) to a bitmap for the tray and window icon.</summary>
-    public static WindowIcon CreateWindowIcon(int size = 128, bool active = true)
-    {
-        var tile = new Grid { Width = size, Height = size };
-        tile.Children.Add(new Border
-        {
-            CornerRadius = new CornerRadius(size * 0.22),
-            Background = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(1, 1, RelativeUnit.Relative),
-                GradientStops =
-                {
-                    new GradientStop(Color.Parse(active ? "#00C8FF" : "#5B6272"), 0),
-                    new GradientStop(Color.Parse(active ? "#19F58C" : "#3B4150"), 1),
-                },
-            },
-        });
-        tile.Children.Add(new Viewbox
-        {
-            Margin = new Thickness(size * 0.18),
-            Child = new ShapePath
-            {
-                Data = Geometry,
-                Fill = new SolidColorBrush(Color.Parse(active ? "#04140C" : "#B8BECB")),
-                Width = 100,
-                Height = 100,
-                Stretch = Stretch.Uniform,
-            },
-        });
-
-        tile.Measure(new Size(size, size));
-        tile.Arrange(new Rect(0, 0, size, size));
-
-        var bitmap = new RenderTargetBitmap(new PixelSize(size, size), new Vector(96, 96));
-        bitmap.Render(tile);
-        return new WindowIcon(bitmap);
-    }
+    /// <summary>The app icon for the tray and windows, grey when filtering is off (see <see cref="BrandIcon"/>).</summary>
+    public static WindowIcon CreateWindowIcon(int size = 128, bool active = true) => BrandIcon.Window(size, alt: !active);
 }

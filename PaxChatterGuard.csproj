@@ -9,6 +9,7 @@
     <AssemblyName>PaxChatterGuard</AssemblyName>
     <Version>1.2.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon Condition="Exists('Assets\PaxChatterGuard.ico')">Assets\PaxChatterGuard.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Keep memory low: no background GC thread, no profile-guided tiering, no ICU culture data. -->
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
