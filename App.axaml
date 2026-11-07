@@ -78,6 +78,19 @@
       <Setter Property="LetterSpacing" Value="0.8" />
     </Style>
 
+    <!-- Chatter monitor: the small total tiles -->
+    <Style Selector="Border.stat">
+      <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+      <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="12,8" />
+    </Style>
+    <Style Selector="TextBlock.statnum">
+      <Setter Property="FontSize" Value="22" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+
     <Style Selector="TextBlock.big">
       <Setter Property="FontSize" Value="34" />
       <Setter Property="FontWeight" Value="Bold" />
@@ -178,6 +191,23 @@
       <Setter Property="Background" Value="{StaticResource AccentPressed}" />
       <Setter Property="BoxShadow" Value="0 0 12 0 #6619F58C" />
     </Style>
+    <!-- Caught keys: the small "suggested delay" pill -->
+    <Style Selector="Button.suggest">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="#1D5A47" />
+      <Setter Property="Foreground" Value="#19F58C" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Padding" Value="10,2" />
+      <Setter Property="CornerRadius" Value="999" />
+    </Style>
+    <Style Selector="Button.suggest:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#0C2A1D" />
+      <Setter Property="BorderBrush" Value="#19F58C" />
+      <Setter Property="Foreground" Value="#4DFFA9" />
+      <Setter Property="BoxShadow" Value="0 0 14 0 #3319F58C" />
+    </Style>
+
     <Style Selector="Button.ghost">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="Transparent" />

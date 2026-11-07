@@ -9,6 +9,12 @@ public static class KeyCatalog
 {
     private static readonly HashSet<int> Modifiers = new() { 0x1D, 0xE01D, 0x2A, 0x36, 0x38, 0xE038, 0xE05B, 0xE05C };
 
+    // Caps Lock, Num Lock (reported with or without the extended flag) and Scroll Lock.
+    private static readonly HashSet<int> Locks = new() { 0x3A, 0x45, 0xE045, 0x46 };
+
+    /// <summary>Keys that switch something on and off when pressed.</summary>
+    public static bool IsLockKey(int key) => Locks.Contains(key);
+
     /// <summary>Every key the app can set an exception for, in keyboard order.</summary>
     public static IReadOnlyList<(int Code, string Name)> All { get; } = Build();
 

@@ -41,6 +41,12 @@ public interface IKeyboardBackend : IDisposable
 
     /// <summary>Limits filtering to these device names (Linux); null or empty means every keyboard.</summary>
     void SetDeviceFilter(IReadOnlyCollection<string>? names);
+
+    /// <summary>
+    /// Whether this backend can hold releases back and send them later (protect-held-keys mode): it acts on
+    /// <see cref="Verdict.Defer"/> and <see cref="Verdict.Replay"/> and sends what <see cref="ChatterEngine.TakeDueReleases"/> hands it.
+    /// </summary>
+    bool SupportsHoldSafe => false;
 }
 
 public static class BackendFactory

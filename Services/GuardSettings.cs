@@ -37,6 +37,12 @@ public sealed class GuardSettings
     /// <summary>The most auto-adjust may ever set, in ms.</summary>
     public int AutoMaxMs { get; set; } = 45;
 
+    /// <summary>Protect held keys: hold each release back by the key's delay so a bounce can't break a held key (Windows).</summary>
+    public bool HoldSafe { get; set; }
+
+    /// <summary>Programs (exe file names) that pause filtering while they are in front (Windows).</summary>
+    public List<string> PausedPrograms { get; set; } = new();
+
     /// <summary>Keyboards with their own settings (Windows). Any keyboard not listed follows the settings above.</summary>
     public List<DeviceProfile> Devices { get; set; } = new();
 
@@ -49,8 +55,11 @@ public sealed class GuardSettings
     /// <summary>Per-key exceptions: key → milliseconds (0 means never filter that key).</summary>
     public Dictionary<int, int> Rules { get; set; } = new();
 
+    /// <summary>Where the settings live. PAXCG_DATA_DIR points it elsewhere (tests use it so they never touch real settings).</summary>
     public static string Folder =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PaxChatterGuard");
+        Environment.GetEnvironmentVariable("PAXCG_DATA_DIR") is { Length: > 0 } dir
+            ? dir
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PaxChatterGuard");
 
     private static string FilePath => Path.Combine(Folder, "settings.json");
 
@@ -96,8 +105,8 @@ public sealed class GuardSettings
         }
     }
 
-    /// <summary>The engine's immutable view of these settings.</summary>
-    public GuardConfig ToConfig(bool ignoreInjected = true) => new()
+    /// <summary>The engine's immutable view of these settings. Protect-held-keys only applies where the backend supports it.</summary>
+    public GuardConfig ToConfig(bool ignoreInjected = true, bool holdSafeSupported = false) => new()
     {
         GlobalMs = Math.Clamp(GlobalMs, 0, 250),
         FilterModifiers = FilterModifiers,
@@ -105,6 +114,7 @@ public sealed class GuardSettings
         AutoMaxMs = Math.Clamp(AutoMaxMs, 10, 250),
         IgnoreInjected = ignoreInjected,
         HotkeyEnabled = HotkeyEnabled,
+        HoldSafe = HoldSafe && holdSafeSupported,
         Rules = Rules.ToDictionary(kv => kv.Key, kv => new KeyRule(Math.Clamp(kv.Value, 0, 250))),
         Devices = Devices.Where(d => d.Id.Length > 0).GroupBy(d => d.Id).ToDictionary(g => g.Key, g =>
             new DeviceCfg(g.First().Enabled, Math.Clamp(g.First().GlobalMs, 0, 250),

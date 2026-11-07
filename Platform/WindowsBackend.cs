@@ -28,6 +28,17 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
     // Markers we put in dwExtraInfo of the keystrokes we create ourselves, so the hook knows them when they come back.
     private const long SelfTestMagic = 0x50415832;  // simulated chatter
     private const long ProbeMagic = 0x50415833;     // watchdog heartbeat
+    private const long ReleaseMagic = 0x50415834;   // a held-back release (protect held keys), or a re-sent release + press
+
+    // Protect held keys: a thread that sends held-back releases when they are due, on a high-resolution timer (a tray app
+    // has no visible window, so Windows 11 may ignore timeBeginPeriod for it).
+    private Thread? _flushThread;
+    private readonly AutoResetEvent _flushWake = new(false);
+    private readonly ConcurrentQueue<int> _replays = new();
+
+    // The virtual-key code each key last went down with, so a release we send matches the press exactly (by scan code
+    // alone, Shift+numpad and similar keys can come out as a different key and stay stuck down).
+    private readonly ushort[] _vk = new ushort[0x200];
 
     private ChatterEngine? _engine;
     private Thread? _hookThread;
@@ -50,6 +61,7 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
 
     public string Name => "Windows keyboard hook";
     public bool IsRunning => _running;
+    public bool SupportsHoldSafe => true;
     public string? SetupHint => null;
     public IReadOnlyList<KeyboardDevice> Devices => Array.Empty<KeyboardDevice>();
     public IReadOnlyList<KeyboardDevice> Seen => _seen.Values.OrderBy(d => d.Name).ToList();
@@ -80,6 +92,8 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
 
         _watchdogThread = new Thread(WatchdogMain) { IsBackground = true, Name = "Chatter watchdog" };
         _watchdogThread.Start();
+        _flushThread = new Thread(FlushMain) { IsBackground = true, Name = "Chatter releases", Priority = ThreadPriority.Highest };
+        _flushThread.Start();
         return null;
     }
 
@@ -92,7 +106,15 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
         if (_hookThreadId != 0)
             PostThreadMessage(_hookThreadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
         _hookThread?.Join(1500);
+        _flushWake.Set();
+        _flushThread?.Join(500);
         _watchdogThread?.Join(500);
+
+        // Never leave a key down in programs: with the hook gone (so nothing new can be held back), send every release
+        // that is still waiting.
+        if (_engine is not null)
+            foreach (var key in _engine.TakeDueReleases(0, all: true))
+                SendRelease(key, thenPress: false);
     }
 
     public void Dispose() => Stop();
@@ -248,8 +270,30 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
                     var key = (int)kb->scanCode | ((kb->flags & LLKHF_EXTENDED) != 0 ? 0xE000 : 0);
                     var injected = (kb->flags & LLKHF_INJECTED) != 0;
 
-                    if (_engine!.OnKey(new KeyEvent(key, down, NowMicros(), injected, extra == SelfTestMagic, _lastDevice)) == Verdict.Block)
-                        return (IntPtr)1;
+                    // A release (or release + press) we sent for a held-back key: the engine notes it, programs get it.
+                    if (extra == ReleaseMagic)
+                    {
+                        _engine!.OnKey(new KeyEvent(key, down, NowMicros(), injected, Replayed: true));
+                        return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+                    }
+
+                    if (down)
+                        _vk[VkSlot(key)] = (ushort)kb->vkCode;
+
+                    switch (_engine!.OnKey(new KeyEvent(key, down, NowMicros(), injected, extra == SelfTestMagic, _lastDevice)))
+                    {
+                        case Verdict.Pass:
+                            break;
+                        case Verdict.Defer:
+                            _flushWake.Set(); // a release is now waiting; make sure the timer knows when it's due
+                            return (IntPtr)1;
+                        case Verdict.Replay:
+                            _replays.Enqueue(key);
+                            _flushWake.Set();
+                            return (IntPtr)1;
+                        default:
+                            return (IntPtr)1;
+                    }
                 }
             }
             catch
@@ -283,6 +327,94 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
                 PostThreadMessage(_hookThreadId, WM_REINSTALL, IntPtr.Zero, IntPtr.Zero);
             }
         }
+    }
+
+    // ---- Held-back releases (protect held keys) --------------------------------------------------------------------
+
+    /// <summary>
+    /// Sends held-back releases when they fall due, and re-sends release + press pairs the hook asked for. Sleeps on a
+    /// high-resolution waitable timer (about 0.5 ms precision) until the next release is due, or until the hook wakes it.
+    /// </summary>
+    private void FlushMain()
+    {
+        var timer = IntPtr.Zero;
+        try
+        {
+            timer = CreateWaitableTimerExW(IntPtr.Zero, null, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+        }
+        catch
+        {
+            /* older Windows: fall back to an ordinary timed wait */
+        }
+
+        var handles = stackalloc IntPtr[2];
+        handles[1] = _flushWake.SafeWaitHandle.DangerousGetHandle();
+
+        try
+        {
+            while (_running)
+            {
+                while (_replays.TryDequeue(out var replay))
+                    SendRelease(replay, thenPress: true);
+                foreach (var key in _engine!.TakeDueReleases(NowMicros()))
+                    SendRelease(key, thenPress: false);
+
+                var next = _engine.NextReleaseDue();
+                if (next is null)
+                {
+                    _flushWake.WaitOne();
+                    continue;
+                }
+
+                var waitMicros = next.Value - NowMicros();
+                if (waitMicros <= 0)
+                    continue;
+
+                if (timer != IntPtr.Zero)
+                {
+                    var due = -waitMicros * 10; // negative = relative, in 100 ns units
+                    if (SetWaitableTimer(timer, ref due, 0, IntPtr.Zero, IntPtr.Zero, false))
+                    {
+                        handles[0] = timer;
+                        WaitForMultipleObjects(2, handles, false, 1000);
+                        continue;
+                    }
+                }
+
+                _flushWake.WaitOne(TimeSpan.FromMilliseconds(Math.Max(1, (waitMicros + 999) / 1000)));
+            }
+        }
+        catch
+        {
+            // Should never happen; if it does, the releases still waiting are sent when the filter stops.
+        }
+        finally
+        {
+            if (timer != IntPtr.Zero)
+                CloseHandle(timer);
+        }
+    }
+
+    private static int VkSlot(int key) => (key & 0xFF) | ((key & 0xE000) != 0 ? 0x100 : 0);
+
+    /// <summary>
+    /// Sends a key's release (and, with <paramref name="thenPress"/>, a press right after it, in one go so nothing can come
+    /// between them). Uses the virtual key the press had plus its scan code and extended flag, so the release matches it.
+    /// </summary>
+    private void SendRelease(int key, bool thenPress)
+    {
+        const uint KEYEVENTF_EXTENDEDKEY = 0x1, KEYEVENTF_KEYUP = 0x2;
+        var scan = (ushort)(key & 0xFF);
+        var extended = (key & 0xE000) != 0;
+        var vk = _vk[VkSlot(key)];
+        if (vk == 0)
+            vk = (ushort)MapVirtualKey((uint)(scan | (extended ? 0xE000 : 0)), 3 /* MAPVK_VSC_TO_VK_EX */);
+
+        var inputs = stackalloc INPUT[2];
+        var flags = extended ? KEYEVENTF_EXTENDEDKEY : 0u;
+        inputs[0] = new INPUT { type = 1, u = new INPUTUNION { ki = new KEYBDINPUT { wVk = vk, wScan = scan, dwFlags = flags | KEYEVENTF_KEYUP, dwExtraInfo = (UIntPtr)(ulong)ReleaseMagic } } };
+        inputs[1] = new INPUT { type = 1, u = new INPUTUNION { ki = new KEYBDINPUT { wVk = vk, wScan = scan, dwFlags = flags, dwExtraInfo = (UIntPtr)(ulong)ReleaseMagic } } };
+        SendInput(thenPress ? 2u : 1u, inputs, sizeof(INPUT));
     }
 
     // ---- Self-test -----------------------------------------------------------------------------------------------
@@ -473,4 +605,22 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr GetModuleHandle(string? lpModuleName);
+
+    [DllImport("user32.dll")]
+    private static extern uint MapVirtualKey(uint code, uint mapType);
+
+    private const uint CREATE_WAITABLE_TIMER_HIGH_RESOLUTION = 0x2;
+    private const uint TIMER_ALL_ACCESS = 0x1F0003;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateWaitableTimerExW(IntPtr attributes, string? name, uint flags, uint access);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetWaitableTimer(IntPtr timer, ref long dueTime, int period, IntPtr completion, IntPtr arg, bool resume);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint WaitForMultipleObjects(uint count, IntPtr* handles, bool waitAll, uint milliseconds);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool CloseHandle(IntPtr handle);
 }

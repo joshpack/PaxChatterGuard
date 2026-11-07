@@ -13,6 +13,7 @@ public partial class App : Application
 {
     private GuardService _svc = null!;
     private SettingsWindow? _window;
+    private MonitorWindow? _monitor;
     private TrayIcon _tray = null!;
     private NativeMenuItem _toggleItem = null!;
     private IClassicDesktopStyleApplicationLifetime _lifetime = null!;
@@ -58,6 +59,9 @@ public partial class App : Application
         var open = new NativeMenuItem("Settings…");
         open.Click += (_, _) => OpenSettings();
 
+        var monitor = new NativeMenuItem("Chatter monitor…");
+        monitor.Click += (_, _) => OpenMonitor();
+
         _toggleItem = new NativeMenuItem("Filtering") { ToggleType = MenuItemToggleType.CheckBox, IsChecked = true };
         _toggleItem.Click += (_, _) => _svc.SetEnabled(!_svc.Settings.Enabled);
 
@@ -68,7 +72,7 @@ public partial class App : Application
         {
             Icon = _onIcon,
             ToolTipText = "PAX Chatter Guard",
-            Menu = new NativeMenu { open, _toggleItem, new NativeMenuItemSeparator(), quit },
+            Menu = new NativeMenu { open, monitor, _toggleItem, new NativeMenuItemSeparator(), quit },
         };
         _tray.Clicked += (_, _) => OpenSettings();
         TrayIcon.SetIcons(this, new TrayIcons { _tray });
@@ -83,16 +87,41 @@ public partial class App : Application
             return;
         }
 
-        _window = new SettingsWindow(_svc);
+        _window = new SettingsWindow(_svc) { OpenMonitor = OpenMonitor };
         _window.Closed += (_, _) =>
         {
             _window = null;
-            // Hand the memory the window used back to the system; the tray needs almost none.
-            DispatcherTimer.RunOnce(MemoryTrim.Trim, TimeSpan.FromSeconds(1));
+            TrimSoon();
         };
         _window.Show();
         _window.Activate();
     }
+
+    /// <summary>Opens the chatter monitor, creating it only now; closing it frees it again.</summary>
+    private void OpenMonitor()
+    {
+        if (_monitor is not null)
+        {
+            _monitor.Activate();
+            return;
+        }
+
+        _monitor = new MonitorWindow(_svc);
+        _monitor.Closed += (_, _) =>
+        {
+            _monitor = null;
+            TrimSoon();
+        };
+        _monitor.Show();
+        _monitor.Activate();
+    }
+
+    /// <summary>Hands the memory a closed window used back to the system once no window is open; the tray needs almost none.</summary>
+    private void TrimSoon() => DispatcherTimer.RunOnce(() =>
+    {
+        if (_window is null && _monitor is null)
+            MemoryTrim.Trim();
+    }, TimeSpan.FromSeconds(1));
 
     private void UpdateTray()
     {
@@ -111,6 +140,7 @@ public partial class App : Application
     private void Quit()
     {
         _window?.Close();
+        _monitor?.Close();
         _svc.Dispose();
         _tray.IsVisible = false;
         _tray.Dispose();

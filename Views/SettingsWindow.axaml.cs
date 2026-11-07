@@ -33,7 +33,8 @@ public partial class SettingsWindow : Window
         if (_dev is null || Prof is not null)
             return;
         var name = _svc.Backend.Seen.FirstOrDefault(d => d.Path == _dev)?.Name ?? _dev;
-        _svc.Settings.Devices.Add(new DeviceProfile { Id = _dev, Name = name, GlobalMs = _svc.Settings.GlobalMs, Rules = new Dictionary<int, int>(_svc.Settings.Rules) });
+        // A security key (YubiKey) starts out left alone, as it is without settings of its own.
+        _svc.Settings.Devices.Add(new DeviceProfile { Id = _dev, Name = name, Enabled = !GuardConfig.IsTokenDevice(_dev), GlobalMs = _svc.Settings.GlobalMs, Rules = new Dictionary<int, int>(_svc.Settings.Rules) });
         Ctl<Button>("KbResetButton").IsVisible = true;
     }
 
@@ -55,7 +56,7 @@ public partial class SettingsWindow : Window
         UpdateStatus();
 
         svc.Changed += OnServiceChanged;
-        svc.LearnedChanged += OnLearned;
+        svc.RulesChanged += OnLearned;
         _timer.Tick += (_, _) =>
         {
             Ctl<TextBlock>("BlockedText").Text = BlockedLine();
@@ -67,11 +68,14 @@ public partial class SettingsWindow : Window
         {
             _timer.Stop();
             svc.Changed -= OnServiceChanged;
-            svc.LearnedChanged -= OnLearned;
+            svc.RulesChanged -= OnLearned;
         };
     }
 
     private T Ctl<T>(string name) where T : Control => this.FindControl<T>(name)!;
+
+    /// <summary>Opens the chatter monitor (the app owns that window).</summary>
+    public Action? OpenMonitor { get; init; }
 
     private void OnLearned()
     {
@@ -97,6 +101,10 @@ public partial class SettingsWindow : Window
         Ctl<Slider>("MsSlider").Value = Math.Clamp(CurMs, 5, 100);
         Ctl<TextBlock>("MsText").Text = $"{CurMs} ms";
         Ctl<ToggleSwitch>("ModifiersSwitch").IsChecked = s.FilterModifiers;
+        Ctl<ToggleSwitch>("HoldSafeSwitch").IsChecked = s.HoldSafe;
+        Ctl<Grid>("HoldSafeRow").IsVisible = _svc.Backend.SupportsHoldSafe;
+        Ctl<Border>("PauseCard").IsVisible = OperatingSystem.IsWindows();
+        BuildPrograms();
         Ctl<ToggleSwitch>("HotkeySwitch").IsChecked = s.HotkeyEnabled;
         Ctl<ToggleSwitch>("AutoSwitch").IsChecked = s.AutoAdjust;
         Ctl<NumericUpDown>("AutoMax").Value = s.AutoMaxMs;
@@ -153,7 +161,7 @@ public partial class SettingsWindow : Window
         Ctl<Slider>("MsSlider").Value = Math.Clamp(CurMs, 5, 100);
         Ctl<TextBlock>("MsText").Text = $"{CurMs} ms";
         Ctl<Grid>("KbOnRow").IsVisible = _dev is not null;
-        Ctl<ToggleSwitch>("KbOnSwitch").IsChecked = Prof?.Enabled ?? true;
+        Ctl<ToggleSwitch>("KbOnSwitch").IsChecked = Prof?.Enabled ?? !GuardConfig.IsTokenDevice(_dev);
         Ctl<Button>("KbResetButton").IsVisible = Prof is not null;
         BuildRules();
         _caughtRows.Clear();
@@ -189,6 +197,37 @@ public partial class SettingsWindow : Window
         };
 
         Bind("ModifiersSwitch", v => _svc.Settings.FilterModifiers = v);
+        Bind("HoldSafeSwitch", v => _svc.Settings.HoldSafe = v);
+
+        if (OperatingSystem.IsWindows())
+        {
+            var programs = Ctl<ComboBox>("ProgramBox");
+            programs.DropDownOpened += (_, _) =>
+            {
+                if (!OperatingSystem.IsWindows())
+                    return;
+
+                // Listed fresh each time, so a game started a moment ago is there.
+                var chosen = programs.SelectedItem as string;
+                programs.Items.Clear();
+                foreach (var name in Platform.ForegroundWatcher.RunningPrograms()
+                             .Where(n => !_svc.Settings.PausedPrograms.Contains(n, StringComparer.OrdinalIgnoreCase)))
+                    programs.Items.Add(name);
+                if (chosen is not null && programs.Items.Contains(chosen))
+                    programs.SelectedItem = chosen;
+            };
+            Ctl<Button>("AddProgramButton").Click += (_, _) =>
+            {
+                if (programs.SelectedItem is not string name
+                    || _svc.Settings.PausedPrograms.Contains(name, StringComparer.OrdinalIgnoreCase))
+                    return;
+                _svc.Settings.PausedPrograms.Add(name);
+                programs.Items.Remove(name);
+                programs.SelectedItem = null;
+                Changed();
+                BuildPrograms();
+            };
+        }
         Bind("HotkeySwitch", v => _svc.Settings.HotkeyEnabled = v);
         Bind("AutoSwitch", v =>
         {
@@ -240,6 +279,7 @@ public partial class SettingsWindow : Window
         };
 
         Ctl<Button>("AddButton").Click += (_, _) => AddRule();
+        Ctl<Button>("MonitorButton").Click += (_, _) => OpenMonitor?.Invoke();
         Ctl<Button>("RetryButton").Click += (_, _) => _svc.StartBackend();
         Ctl<Button>("TestButton").Click += async (_, _) => await RunTestAsync();
     }
@@ -338,7 +378,18 @@ public partial class SettingsWindow : Window
 
     // ---- Caught keys ---------------------------------------------------------------------------------------------
 
-    private readonly Dictionary<int, (TextBlock Info, NumericUpDown Delay)> _caughtRows = new();
+    private sealed record CaughtRow(TextBlock Info, NumericUpDown Delay, Button Suggest, TextBlock Fits);
+
+    private readonly Dictionary<int, CaughtRow> _caughtRows = new();
+
+    /// <summary>A non-breaking space: keeps a number with its unit when a line wraps.</summary>
+    private const char Nbsp = (char)0xA0;
+
+    /// <summary>The delay a key really gets in the list being edited (Shift, Ctrl, Alt and Win get none unless filtered).</summary>
+    private int EffectiveDelay(int key) =>
+        CurRules.TryGetValue(key, out var own) ? own
+        : KeyCatalog.IsModifier(key) && !_svc.Settings.FilterModifiers ? 0
+        : CurMs;
 
     private void RefreshCaught()
     {
@@ -353,9 +404,8 @@ public partial class SettingsWindow : Window
             foreach (var c in caught)
             {
                 var key = c.Key;
-                var info = new TextBlock { Classes = { "muted" }, VerticalAlignment = VerticalAlignment.Center, FontSize = 11 };
-                var effective = CurRules.TryGetValue(key, out var own) ? own : CurMs;
-                var delay = new NumericUpDown { Minimum = 0, Maximum = 250, Value = effective, FormatString = "0", Width = 130, MinHeight = 32 };
+                var info = new TextBlock { Classes = { "muted" }, FontSize = 11, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Right };
+                var delay = new NumericUpDown { Minimum = 0, Maximum = 250, Value = EffectiveDelay(key), FormatString = "0", Width = 130, MinHeight = 32, VerticalAlignment = VerticalAlignment.Center };
                 delay.ValueChanged += (_, e) =>
                 {
                     if (_loading || e.NewValue is not { } v)
@@ -364,19 +414,40 @@ public partial class SettingsWindow : Window
                     CurRules[key] = (int)v;
                     Changed();
                     BuildRules();
+                    RefreshCaught();
                 };
 
-                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"), ColumnSpacing = 8 };
-                row.Children.Add(new TextBlock { Text = KeyCatalog.NameOf(key), VerticalAlignment = VerticalAlignment.Center });
-                Grid.SetColumn(info, 1);
-                row.Children.Add(info);
+                // The suggested delay: a button that applies it, or a tick when the key already has it.
+                var suggest = new Button { Classes = { "suggest" }, HorizontalAlignment = HorizontalAlignment.Right };
+                suggest.Click += (_, _) =>
+                {
+                    if (suggest.Tag is not int ms)
+                        return;
+                    var was = _loading;
+                    _loading = true;
+                    delay.Value = ms;
+                    _loading = was;
+                    EnsureProfile();
+                    CurRules[key] = ms;
+                    Changed();
+                    BuildRules();
+                    RefreshCaught();
+                };
+                var fits = new TextBlock { FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#19F58C")), HorizontalAlignment = HorizontalAlignment.Right };
+                var details = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center, Children = { info, suggest, fits } };
+
+                // The key's name keeps its room; the details wrap rather than push it out.
+                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), ColumnSpacing = 8 };
+                row.Children.Add(new TextBlock { Text = KeyCatalog.NameOf(key), VerticalAlignment = VerticalAlignment.Center, MinWidth = 64 });
+                Grid.SetColumn(details, 1);
+                row.Children.Add(details);
                 Grid.SetColumn(delay, 2);
                 row.Children.Add(delay);
                 var ms = new TextBlock { Text = "ms", Classes = { "muted" }, VerticalAlignment = VerticalAlignment.Center };
                 Grid.SetColumn(ms, 3);
                 row.Children.Add(ms);
                 list.Children.Add(row);
-                _caughtRows[key] = (info, delay);
+                _caughtRows[key] = new CaughtRow(info, delay, suggest, fits);
             }
 
             if (caught.Count == 0)
@@ -384,9 +455,83 @@ public partial class SettingsWindow : Window
         }
 
         foreach (var c in caught)
-            _caughtRows[c.Key].Info.Text = c.Count > 0
-                ? $"blocked {c.Count}× (up to {c.LongestGapMs} ms)" + (c.ShortestPassedMs > 0 ? $" · closest let through {c.ShortestPassedMs} ms" : "")
-                : $"none blocked · closest re-press {c.ShortestPassedMs} ms";
+        {
+            var row = _caughtRows[c.Key];
+            var current = EffectiveDelay(c.Key);
+            var best = ChatterEngine.SuggestDelayMs(current, c.ChatterMaxMicros, c.HumanNextMicros, out var tight);
+            var why = SuggestionReason(c, current, best, tight);
+            row.Suggest.IsVisible = best != current;
+            row.Suggest.Tag = best;
+            row.Suggest.Content = $"Suggested {best}{Nbsp}ms · use";
+            row.Fits.IsVisible = best == current;
+            row.Fits.Text = best == 0 ? "✓ suggested: not filtered" : $"✓ suggested {best}{Nbsp}ms";
+            ToolTip.SetTip(row.Suggest, why);
+            ToolTip.SetTip(row.Fits, why);
+        }
+
+        foreach (var c in caught)
+        {
+            var parts = new List<string>();
+            parts.Add(c.Count > 0 ? $"blocked {c.Count}× (up to {c.LongestGapMs}{Nbsp}ms)" : "none blocked");
+            if (c.Slipped > 0)
+                parts.Add($"{c.Slipped} got through");
+            if (c.ShortestPassedMs > 0)
+                parts.Add(c.Count > 0 ? $"closest let through {c.ShortestPassedMs}{Nbsp}ms" : $"closest re-press {c.ShortestPassedMs}{Nbsp}ms");
+            _caughtRows[c.Key].Info.Text = string.Join(" · ", parts);
+        }
+    }
+
+    /// <summary>Why a delay is suggested for a key, in a sentence or two (the tooltip on the suggestion).</summary>
+    private static string SuggestionReason(ChatterEngine.CaughtKey c, int current, int best, bool tight)
+    {
+        var seen = new List<string>();
+        if (c.ChatterMaxMicros > 0)
+            seen.Add($"its chatter came up to {MonitorWindow.Ms(c.ChatterMaxMicros)} after letting go");
+        if (c.HumanNextMicros > 0)
+            seen.Add($"your two quickest real re-presses of it were {MonitorWindow.Ms(c.HumanMinMicros)} and {MonitorWindow.Ms(c.HumanNextMicros)}");
+        else if (c.HumanMinMicros > 0)
+            seen.Add($"you re-pressed it once {MonitorWindow.Ms(c.HumanMinMicros)} after letting go (once could be a fluke, so that alone never lowers the delay)");
+        if (seen.Count == 0)
+            return "Nothing telling yet: keep the current delay and look again later.";
+
+        var what = "So far " + string.Join(", and ", seen) + ". ";
+        if (tight)
+            return what + $"These overlap: {best} ms blocks the chatter but may also catch your very quickest presses.";
+        if (best > current)
+            return what + $"{best} ms blocks that chatter with some room to spare.";
+        if (best < current)
+            return what + (c.ChatterMaxMicros > 0
+                ? $"{best} ms still blocks the chatter and lets your quick presses through."
+                : $"{best} ms lets your quick presses through.");
+        return what + "The current delay already fits.";
+    }
+
+    // ---- Pause for programs (Windows) ---------------------------------------------------------------------------
+
+    private void BuildPrograms()
+    {
+        var list = Ctl<StackPanel>("ProgramList");
+        list.Children.Clear();
+        foreach (var name in _svc.Settings.PausedPrograms.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList())
+        {
+            var remove = new Button { Content = "✕", Classes = { "ghost" }, MinHeight = 30, Padding = new Thickness(10, 2) };
+            var n = name;
+            remove.Click += (_, _) =>
+            {
+                _svc.Settings.PausedPrograms.RemoveAll(p => string.Equals(p, n, StringComparison.OrdinalIgnoreCase));
+                Changed();
+                BuildPrograms();
+            };
+
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
+            row.Children.Add(new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center });
+            Grid.SetColumn(remove, 1);
+            row.Children.Add(remove);
+            list.Children.Add(row);
+        }
+
+        if (_svc.Settings.PausedPrograms.Count == 0)
+            list.Children.Add(new TextBlock { Text = "No programs: filtering never pauses.", Classes = { "muted" }, FontSize = 12 });
     }
 
     // ---- Linux: choose keyboards ---------------------------------------------------------------------------------

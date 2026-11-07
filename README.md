@@ -12,18 +12,27 @@ When a key goes down again only a few milliseconds after it was released, that i
 
 - **One sensitivity for every key.** The default is 30 ms; 25 to 40 ms suits most keyboards.
 - **Per-key exceptions.** Give the key that chatters worst a longer delay, or set a key to 0 so it is never filtered (handy for a key you double-tap on purpose in games).
-- **Caught keys.** The window lists every key it blocked since it started, how many times, the longest gap it blocked, and re-presses that came close. You can raise a key's delay right there.
+- **Chatter monitor.** A live list of every press that looked like chatter, blocked or not: the key, how soon it went down again after you let go, how long the press lasted, and what happened to it. Chatter that got through is flagged so you can compare it with what you saw on screen, and one click (**Add to list**) gives that key its own delay just above the gap. A blocked press you made on purpose has **Was me**, which lowers the delay below it. It keeps watching with filtering off too, so you can see what the filter *would* catch before switching it on. Open it from the tray menu or the settings.
+- **Caught keys, with a suggested delay for each.** The settings list every key it blocked since it started, how many times, the longest gap it blocked, chatter that got through, and re-presses that came close. Each key also gets a **suggested delay** worked out from what that key has done: high enough to clear the longest chatter seen on it (plus 20%, at least 4 ms), low enough to let your own quick re-presses of it through (3 ms under the second-quickest, so one fluke never lowers it). It only moves away from the key's current delay when the data says so, and one click uses it. Hover over it to see why.
 - **Per-keyboard settings (Windows).** Every keyboard it sees typing gets an entry. Change one and it gets its own sensitivity and exceptions; switch one off and that keyboard is left alone. The others follow the defaults.
-- **Auto-adjust (optional).** When the same key is re-pressed faster than the limit you set (45 ms by default) a second time, its delay is raised to just above that gap, never past the limit.
+- **Auto-adjust (optional).** When chatter gets past a key's delay a second time (a press too short for a finger, sooner than the limit you set, 45 ms by default), that key's delay is raised to just above the gap, never past the limit. Quick double taps you make on purpose never count.
+- **Held keys keep working.** If a press is blocked but you are actually holding the key, it is let through as soon as the key starts repeating, so a held key is never lost for good.
+- **Protect held keys (optional, Windows).** For games: every release of a filtered key is held back by its delay, and if the switch bounces back down in that time the bounce is swallowed, so programs see the key stay down instead of a release and a missing press. A held movement key never stutters. The cost is that letting go of a key reaches programs that many milliseconds later. It is new in 1.1.0 and off by default.
+- **Pause for chosen programs (Windows).** Filtering pauses while a program on your list is in front, for example a game where you double-tap on purpose. The monitor still watches.
+- **Security keys are left alone.** A YubiKey types its codes as a keyboard, repeating letters a few milliseconds apart, which looks exactly like chatter. Yubico keys are never filtered unless you give them settings of their own.
 - **Hotkey:** <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>F9</kbd> turns filtering on and off from anywhere (not on macOS).
 - **Built-in test.** "Simulate a bounce" sends a fake chatter burst through the real filter and tells you whether it was caught.
-- **Leaves other input alone.** Keystrokes that programs create (macros, remote desktop, on-screen keyboards) pass through untouched.
-- **Light.** The settings window only exists while it is open. Sitting in the tray it uses about 13 MB of memory and no CPU while you aren't typing.
+- **Leaves other input alone.** Keystrokes that programs create (macros, remote desktop, on-screen keyboards, input methods) pass through untouched.
+- **Light.** The windows only exist while they are open. Sitting in the tray it uses about 13 MB of memory and no CPU while you aren't typing. The monitor's log is a small fixed buffer in memory that is never saved.
 - **Start when I sign in**, optional.
 
-| One keyboard with its own settings | The whole window |
+<p align="center">
+  <img src="docs/screenshots/monitor.png" width="560" alt="The chatter monitor: totals for blocked, got through, not filtered and close calls, then a list of keys such as I blocked 5 ms after letting go, D got through with a 4 ms press and an Add to list · 46 ms button, and Space blocked with a Was me button">
+</p>
+
+| One keyboard with its own settings | The whole settings window |
 | --- | --- |
-| <img src="docs/screenshots/per-keyboard.png" width="400" alt="One keyboard chosen, with its own 38 ms sensitivity, its own on/off switch and a Use default button"> | <img src="docs/screenshots/settings-full.png" width="400" alt="The full settings window: sensitivity, caught keys, exceptions, options and the Try it test"> |
+| <img src="docs/screenshots/per-keyboard.png" width="400" alt="One keyboard chosen, with its own 38 ms sensitivity, its own on/off switch and a Use default button"> | <img src="docs/screenshots/settings-full.png" width="400" alt="The full settings window: sensitivity, caught keys, exceptions, options including Protect held keys, the pause list and the Try it test"> |
 
 ## How it works
 
@@ -32,6 +41,11 @@ Every key press and release goes through one rule engine (`Core/ChatterEngine.cs
 1. When a key is released, the time is noted.
 2. When the same key is pressed again, the gap since that release is compared with the key's delay: its exception if it has one, otherwise the sensitivity of the keyboard it came from, otherwise the default.
 3. If the gap is shorter, the press **and its matching release** are dropped, so programs never see half a keystroke. Holding a key down (auto-repeat) is never affected.
+4. If a dropped press turns out to be held (the key starts repeating), it was a finger, not a bounce: from then on the key is let through as if just pressed, and its release with it.
+
+With **Protect held keys** on, step 3 works the other way round, like the "defer release" debounce in keyboard firmware: the release is held back for the key's delay. A press that comes back within it is a bounce and is swallowed, so programs saw the key stay down the whole time. Otherwise the release is sent when the delay runs out, with the key's own virtual-key code, scan code and extended flag, so it matches the press exactly. Releases are timed on a high-resolution timer. Any release still waiting is sent when the app quits, so no key is left down. Caps Lock, Num Lock and Scroll Lock are never held back.
+
+The chatter monitor uses one more clue. A bouncing contact makes a "press" that lasts one to five milliseconds, and nobody can press and release a key in under about 15 ms. So a quick re-press (within 100 ms) where either press was that short is reported as chatter that **got through**, even when the gap was longer than the delay. Re-presses up to 20 ms past the delay are reported as **close calls**, which are usually you. Only presses that can't be a finger teach auto-adjust anything.
 
 Keys are stored by physical position (PS/2 scancodes), so an exception for the key right of Caps Lock means the same key on every layout and every operating system.
 
@@ -62,25 +76,25 @@ Download from **[the latest release](https://github.com/joshpack/PaxChatterGuard
 
 | File | For |
 | --- | --- |
-| `PaxChatterGuard-1.0.0-win-x64.zip` | Windows 10/11, 64-bit. Needs the .NET 10 Runtime. |
-| `PaxChatterGuard-1.0.0-linux-x64.tar.gz` | Linux, 64-bit. **Untested.** Self-contained, nothing else to install. |
-| `PaxChatterGuard-1.0.0-osx-arm64.tar.gz` | Mac with Apple Silicon. **Untested.** Self-contained. |
-| `PaxChatterGuard-1.0.0-osx-x64.tar.gz` | Mac with an Intel processor. **Untested.** Self-contained. |
+| `PaxChatterGuard-1.1.0-win-x64.zip` | Windows 10/11, 64-bit. Needs the .NET 10 Runtime. |
+| `PaxChatterGuard-1.1.0-linux-x64.tar.gz` | Linux, 64-bit. **Untested.** Self-contained, nothing else to install. |
+| `PaxChatterGuard-1.1.0-osx-arm64.tar.gz` | Mac with Apple Silicon. **Untested.** Self-contained. |
+| `PaxChatterGuard-1.1.0-osx-x64.tar.gz` | Mac with an Intel processor. **Untested.** Self-contained. |
 
 ### Windows
 
 1. Install the **[.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)** (x64) if you don't have it. The plain ".NET Runtime" is enough; the ".NET Desktop Runtime" includes it, so that works too.
-2. Unzip `PaxChatterGuard-1.0.0-win-x64.zip` somewhere permanent, for example `%LOCALAPPDATA%\PaxChatterGuard`.
-3. Run `PaxChatterGuard.exe`. It doesn't need administrator rights.
+2. Unzip `PaxChatterGuard-1.1.0-win-x64.zip` somewhere permanent, for example into `%LOCALAPPDATA%`. It contains one folder, `PaxChatterGuard`. To update, quit the app and replace that folder; your settings live elsewhere and are kept.
+3. Run `PaxChatterGuard.exe` from that folder. It doesn't need administrator rights.
 
-The exe isn't code-signed, so SmartScreen may warn the first time: choose **More info → Run anyway**. To check the download in PowerShell: `Get-FileHash PaxChatterGuard-1.0.0-win-x64.zip` and compare it with the `.sha256` file.
+The exe isn't code-signed, so SmartScreen may warn the first time: choose **More info → Run anyway**. To check the download in PowerShell: `Get-FileHash PaxChatterGuard-1.1.0-win-x64.zip` and compare it with the `.sha256` file.
 
 ### Linux (untested)
 
 ```bash
-sha256sum -c PaxChatterGuard-1.0.0-linux-x64.tar.gz.sha256
+sha256sum -c PaxChatterGuard-1.1.0-linux-x64.tar.gz.sha256
 mkdir -p ~/.local/opt
-tar -xzf PaxChatterGuard-1.0.0-linux-x64.tar.gz -C ~/.local/opt
+tar -xzf PaxChatterGuard-1.1.0-linux-x64.tar.gz -C ~/.local/opt
 ~/.local/opt/PaxChatterGuard/PaxChatterGuard
 ```
 
@@ -105,9 +119,9 @@ The tray icon uses the StatusNotifier (AppIndicator) standard. KDE, Xfce, Cinnam
 ### macOS (untested)
 
 ```bash
-shasum -a 256 -c PaxChatterGuard-1.0.0-osx-arm64.tar.gz.sha256
+shasum -a 256 -c PaxChatterGuard-1.1.0-osx-arm64.tar.gz.sha256
 mkdir -p ~/Applications
-tar -xzf PaxChatterGuard-1.0.0-osx-arm64.tar.gz -C ~/Applications
+tar -xzf PaxChatterGuard-1.1.0-osx-arm64.tar.gz -C ~/Applications
 xattr -dr com.apple.quarantine ~/Applications/PaxChatterGuard   # it isn't signed or notarised
 ~/Applications/PaxChatterGuard/PaxChatterGuard
 ```
@@ -121,9 +135,9 @@ This download is a plain folder, not a signed `.app` bundle, so expect rough edg
 ## First run
 
 - The settings window opens and a tray icon appears (an X on a green tile; it dims while filtering is off).
-- **Click the tray icon** to open the settings. **Right-click** it for *Settings…*, *Filtering* (on/off) and *Quit*.
+- **Click the tray icon** to open the settings. **Right-click** it for *Settings…*, *Chatter monitor…*, *Filtering* (on/off) and *Quit*.
 - Closing the window keeps the filter running in the tray. *Quit* stops it.
-- Type normally for a while, then look at **Caught keys** to see what has been blocked.
+- Open the **Chatter monitor** and type normally for a while: anything that looks like chatter shows up there, blocked or not.
 - Switch on **Start when I sign in** to start with the system. It then starts quietly in the tray (`--minimized`) and only opens the window when something needs attention.
 
 | System | What "Start when I sign in" adds |
@@ -134,7 +148,9 @@ This download is a plain folder, not a signed `.app` bundle, so expect rough edg
 
 ### Choosing a sensitivity
 
-Start at 30 ms. If a letter still doubles now and then, find it under **Caught keys** and set that key's delay just above its "closest let through" gap, or turn on **Auto-adjust**. If quick double-taps (in games, say) go missing, lower the sensitivity or give that key an exception of 0.
+Start at 30 ms. If a letter still doubles now and then, look for it in the **Chatter monitor**: chatter that got through is marked, and **Add to list** gives that key a delay just above the gap it slipped through with. After a while of normal typing, the **suggested delay** next to each key under **Caught keys** takes everything seen on that key into account; press it to use it. (Or set a delay by hand there, or turn on **Auto-adjust**.) If quick double-taps (in games, say) go missing, find them in the monitor as blocked presses and press **Was me**, lower the sensitivity, give that key an exception of 0, or put the game on the pause list.
+
+Not sure whether to trust the filter yet? Leave filtering off and keep the monitor open for a while: it lists everything the filter *would* have blocked, so you can compare it with what you typed.
 
 ## Hotkey and command line
 
@@ -159,7 +175,7 @@ Everything you change is saved as JSON:
 | Linux | `~/.config/PaxChatterGuard/settings.json` (or under `$XDG_CONFIG_HOME`) |
 | macOS | `~/.config/PaxChatterGuard/settings.json` |
 
-Main fields: `Enabled`, `GlobalMs` (the sensitivity), `Rules` (scancode → ms, 0 = never filter), `FilterModifiers`, `HotkeyEnabled`, `AutoAdjust`, `AutoMaxMs`, `Devices` (per-keyboard settings, Windows) and `LinuxDevices` (keyboards to filter on Linux; empty means all). Delete the file to go back to the defaults. The caught-keys list lives in memory only and is never saved.
+Main fields: `Enabled`, `GlobalMs` (the sensitivity), `Rules` (scancode → ms, 0 = never filter), `FilterModifiers`, `HotkeyEnabled`, `AutoAdjust`, `AutoMaxMs`, `HoldSafe` (protect held keys, Windows), `PausedPrograms` (exe names that pause filtering, Windows), `Devices` (per-keyboard settings, Windows) and `LinuxDevices` (keyboards to filter on Linux; empty means all). Delete the file to go back to the defaults. The caught-keys list and the chatter monitor's log live in memory only and are never saved.
 
 ## Uninstall
 
@@ -179,28 +195,35 @@ cd PaxChatterGuard
 dotnet run -- --safe-test 60          # try it; quits by itself after a minute
 
 # Windows (framework-dependent: needs the .NET 10 Runtime)
-dotnet publish -c Release -r win-x64 --self-contained false -p:Version=1.0.0 -p:DebugType=none -o publish/win-x64
+dotnet publish -c Release -r win-x64 --self-contained false -p:Version=1.1.0 -p:DebugType=none -o publish/win-x64
 
 # Linux and macOS (self-contained)
-dotnet publish -c Release -r linux-x64 --self-contained true -p:Version=1.0.0 -p:DebugType=none -o publish/linux-x64
-dotnet publish -c Release -r osx-arm64 --self-contained true -p:Version=1.0.0 -p:DebugType=none -o publish/osx-arm64
-dotnet publish -c Release -r osx-x64   --self-contained true -p:Version=1.0.0 -p:DebugType=none -o publish/osx-x64
+dotnet publish -c Release -r linux-x64 --self-contained true -p:Version=1.1.0 -p:DebugType=none -o publish/linux-x64
+dotnet publish -c Release -r osx-arm64 --self-contained true -p:Version=1.1.0 -p:DebugType=none -o publish/osx-arm64
+dotnet publish -c Release -r osx-x64   --self-contained true -p:Version=1.1.0 -p:DebugType=none -o publish/osx-x64
 ```
 
 Every target can be built on any of the three systems. If the project sits on a network drive whose clock differs from yours, build with `--no-incremental` so no change is skipped.
 
-For automated tests, the environment variable `PAXCG_ACCEPT_INJECTED=1` makes keystrokes created by test tools count as real ones.
+The filter rules have their own tests, which feed made-up key presses into the engine and never touch a real keyboard:
+
+```bash
+dotnet run --project tests/EngineTests
+```
+
+For automated tests of the whole app, the environment variable `PAXCG_ACCEPT_INJECTED=1` makes keystrokes created by test tools count as real ones, and `PAXCG_DATA_DIR` points the settings file somewhere else so your real settings are never touched.
 
 ## Code layout
 
 | Path | What's there |
 | --- | --- |
 | `Program.cs` | Start-up, command-line options, single-instance lock |
-| `App.axaml(.cs)` | Theme, tray icon and menu; creates the window when needed and frees it when closed |
-| `Core/ChatterEngine.cs` | The filtering rules, caught-key stats, auto-adjust and the on/off hotkey |
+| `App.axaml(.cs)` | Theme, tray icon and menu; creates the windows when needed and frees them when closed |
+| `Core/ChatterEngine.cs` | The filtering rules, held-back releases, the chatter log, caught-key stats, auto-adjust and the on/off hotkey |
 | `Core/KeyCatalog.cs` | Key names by scancode |
 | `Platform/IKeyboardBackend.cs` | The interface each system implements, and the factory that picks one |
-| `Platform/WindowsBackend.cs` | Low-level hook, Raw Input keyboard detection, watchdog |
+| `Platform/WindowsBackend.cs` | Low-level hook, Raw Input keyboard detection, watchdog, sending held-back releases |
+| `Platform/ForegroundWatcher.cs` | Which program is in front, for the pause list (Windows) |
 | `Platform/LinuxBackend.cs` | evdev grab and uinput virtual keyboard |
 | `Platform/MacBackend.cs` | Quartz event tap |
 | `Platform/MemoryTrim.cs` | Hands unused memory back to the system after the window closes |
@@ -208,7 +231,9 @@ For automated tests, the environment variable `PAXCG_ACCEPT_INJECTED=1` makes ke
 | `Services/GuardSettings.cs` | The settings file |
 | `Services/Autostart.cs` | Start at sign-in on each system |
 | `Views/SettingsWindow.axaml(.cs)` | The settings window |
+| `Views/MonitorWindow.axaml(.cs)` | The chatter monitor |
 | `SpadeIcon.cs` | The app and tray icon, drawn in code |
+| `tests/EngineTests/` | Tests for the filter rules |
 | `docs/screenshots/` | The pictures in this file |
 
 Built with [Avalonia](https://avaloniaui.net/) 12 on .NET 10.

@@ -78,9 +78,12 @@
 
         <Border Classes="card" Padding="16">
           <StackPanel Spacing="8">
-            <TextBlock Text="CAUGHT KEYS" Classes="label" />
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="CAUGHT KEYS" Classes="label" VerticalAlignment="Center" />
+              <Button x:Name="MonitorButton" Grid.Column="1" Content="Open chatter monitor" MinHeight="30" Padding="12,3" FontSize="12" />
+            </Grid>
             <TextBlock x:Name="CaughtNote" Classes="muted" FontSize="11" TextWrapping="Wrap"
-                       Text="Keys that were blocked, or re-pressed so quickly that they came close, since the app started. If a doubled letter slipped through, set that key's delay just above its closest gap." />
+                       Text="Keys that were blocked, got through looking like chatter, or were re-pressed so quickly that they came close, since the app started. The chatter monitor shows each one with its timing. If a doubled letter slipped through, set that key's delay just above its closest gap." />
             <StackPanel x:Name="CaughtList" Spacing="6" />
           </StackPanel>
         </Border>
@@ -105,10 +108,17 @@
               <TextBlock Text="Also filter Shift, Ctrl, Alt and Win" VerticalAlignment="Center" />
               <ToggleSwitch x:Name="ModifiersSwitch" Grid.Column="1" OnContent="" OffContent="" />
             </Grid>
+            <Grid x:Name="HoldSafeRow" ColumnDefinitions="*,Auto" IsVisible="False">
+              <StackPanel Spacing="1" VerticalAlignment="Center">
+                <TextBlock Text="Protect held keys" />
+                <TextBlock Text="Holds each release back by the key's delay, so a bounce can't let go of a key you're holding (games). Letting go reaches programs that much later." Classes="muted" FontSize="11" TextWrapping="Wrap" />
+              </StackPanel>
+              <ToggleSwitch x:Name="HoldSafeSwitch" Grid.Column="1" OnContent="" OffContent="" />
+            </Grid>
             <Grid ColumnDefinitions="*,Auto">
               <StackPanel Spacing="1" VerticalAlignment="Center">
                 <TextBlock Text="Auto-adjust delays" />
-                <TextBlock Text="When a key double-types, raise its delay just above that gap, up to the limit" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+                <TextBlock Text="When chatter gets past a key's delay twice, raise that key's delay just above it, up to the limit. Quick double taps never count." Classes="muted" FontSize="11" TextWrapping="Wrap" />
               </StackPanel>
               <ToggleSwitch x:Name="AutoSwitch" Grid.Column="1" OnContent="" OffContent="" />
             </Grid>
@@ -131,6 +141,19 @@
               </StackPanel>
               <ToggleSwitch x:Name="AutostartSwitch" Grid.Column="1" OnContent="" OffContent="" />
             </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="PauseCard" Classes="card" Padding="16" IsVisible="False">
+          <StackPanel Spacing="10">
+            <TextBlock Text="PAUSE FOR THESE PROGRAMS" Classes="label" />
+            <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                       Text="Filtering pauses while one of these is the program in front, for example a game where you double-tap on purpose. Start the program, then pick it here." />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <ComboBox x:Name="ProgramBox" HorizontalAlignment="Stretch" MinHeight="34" Padding="10,4" PlaceholderText="Choose a running program…" />
+              <Button x:Name="AddProgramButton" Grid.Column="1" Content="Add" MinHeight="34" Padding="14,4" />
+            </Grid>
+            <StackPanel x:Name="ProgramList" Spacing="4" />
           </StackPanel>
         </Border>
 

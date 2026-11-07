@@ -1,0 +1,457 @@
+using PaxChatterGuard.Core;
+
+// Tests for the filter rules. Each test feeds a made-up stream of key presses and releases (times in milliseconds) into
+// a fresh engine and checks what it let through and what it logged. Nothing here touches a real keyboard.
+
+var failures = 0;
+var passed = 0;
+
+void Test(string name, Action body)
+{
+    try
+    {
+        body();
+        passed++;
+        Console.WriteLine($"  ok   {name}");
+    }
+    catch (Exception ex)
+    {
+        failures++;
+        Console.WriteLine($"  FAIL {name}: {ex.Message}");
+    }
+}
+
+void Eq<T>(T expected, T actual, string what)
+{
+    if (!EqualityComparer<T>.Default.Equals(expected, actual))
+        throw new Exception($"{what}: expected {expected}, got {actual}");
+}
+
+const int I = 0x17;      // the I key
+const int D = 0x20;      // the D key
+const int LShift = 0x2A;
+const int LCtrl = 0x1D;
+const int LAlt = 0x38;
+
+ChatterEngine Engine(GuardConfig? cfg = null) => new() { Config = cfg ?? new GuardConfig { GlobalMs = 30 } };
+
+// Feeds one event; returns "P" (pass), "B" (block), "D" (release held back) or "R" (re-send release + press).
+string Ev(ChatterEngine e, int key, bool down, double ms, string? device = null, bool injected = false, bool test = false, bool replayed = false) =>
+    e.OnKey(new KeyEvent(key, down, (long)(ms * 1000), injected, test, device, replayed)) switch
+    {
+        Verdict.Pass => "P",
+        Verdict.Block => "B",
+        Verdict.Defer => "D",
+        _ => "R",
+    };
+
+// Feeds a whole sequence written as "d0 u80 d85 u88" (d = press, u = release, number = ms) and returns the verdicts.
+string Seq(ChatterEngine e, int key, string steps, string? device = null)
+{
+    var result = "";
+    foreach (var step in steps.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        result += Ev(e, key, step[0] == 'd', double.Parse(step[1..], System.Globalization.CultureInfo.InvariantCulture), device);
+    return result;
+}
+
+Console.WriteLine("Chatter engine tests");
+
+Test("a bounce right after letting go is blocked, with its release", () =>
+{
+    var e = Engine();
+    Eq("PPBBPP", Seq(e, I, "d0 u80 d85 u88 d300 u380"), "verdicts");
+    Eq(1L, e.TotalBlocked, "blocked count");
+    var log = e.RecentEvents();
+    Eq(1, log.Count, "log lines");
+    Eq(ChatterKind.Blocked, log[0].Kind, "kind");
+    Eq(5000L, log[0].GapMicros, "gap");
+    Eq(3000L, log[0].HeldMicros, "held");
+    Eq(80000L, log[0].PrevHeldMicros, "press before it");
+    Eq(30, log[0].DelayMs, "delay");
+});
+
+Test("a deliberate quick double press passes and isn't logged", () =>
+{
+    var e = Engine();
+    Eq("PPPP", Seq(e, I, "d0 u80 d140 u220"), "verdicts");
+    Eq(0, e.RecentEvents().Count, "log lines");
+});
+
+Test("a re-press just past the delay is a close call", () =>
+{
+    var e = Engine();
+    Eq("PPPP", Seq(e, I, "d0 u80 d120 u200"), "verdicts");
+    var log = e.RecentEvents();
+    Eq(1, log.Count, "log lines");
+    Eq(ChatterKind.CloseCall, log[0].Kind, "kind");
+    Eq(40000L, log[0].GapMicros, "gap");
+});
+
+Test("a 3 ms press after a 40 ms gap is chatter that got through", () =>
+{
+    var e = Engine();
+    Eq("PPPP", Seq(e, I, "d0 u80 d120 u123"), "verdicts");
+    var log = e.RecentEvents();
+    Eq(ChatterKind.Slipped, log[0].Kind, "kind");
+    Eq(3000L, log[0].HeldMicros, "held");
+    Eq(1L, e.TotalSlipped, "slipped count");
+});
+
+Test("a 2 ms first contact then a real press is chatter that got through", () =>
+{
+    var e = Engine();
+    Eq("PPPP", Seq(e, I, "d0 u2 d45 u130"), "verdicts");
+    var log = e.RecentEvents();
+    Eq(ChatterKind.Slipped, log[0].Kind, "kind");
+    Eq(2000L, log[0].PrevHeldMicros, "press before it");
+});
+
+Test("a slow re-press with a tiny press is still reported up to 100 ms", () =>
+{
+    var e = Engine();
+    Eq("PPPP", Seq(e, I, "d0 u80 d170 u173"), "verdicts");
+    Eq(ChatterKind.Slipped, e.RecentEvents()[0].Kind, "kind");
+    var e2 = Engine();
+    Seq(e2, I, "d0 u80 d200 u203");
+    Eq(0, e2.RecentEvents().Count, "beyond 100 ms");
+});
+
+Test("a bounce burst is one line with its extra bounces counted", () =>
+{
+    var e = Engine();
+    Eq("PPBBBBPP", Seq(e, I, "d0 u80 d82 u84 d86 u88 d400 u480"), "verdicts");
+    var log = e.RecentEvents();
+    Eq(1, log.Count, "log lines");
+    Eq(2, log[0].Bounces, "bounces");
+    Eq(2L, e.TotalBlocked, "blocked count");
+});
+
+Test("a real press after a blocked bounce isn't mistaken for chatter", () =>
+{
+    // The bounce (3 ms) never reached any program, so its shortness says nothing about the next press.
+    var e = Engine();
+    Eq("PPBBPP", Seq(e, I, "d0 u80 d82 u85 d145 u230"), "verdicts");
+    var log = e.RecentEvents();
+    Eq(1, log.Count, "only the bounce is logged");
+    Eq(ChatterKind.Blocked, log[0].Kind, "kind");
+});
+
+Test("holding a key whose press was blocked lets the hold through when it repeats", () =>
+{
+    var e = Engine();
+    // press, release, quick re-press (blocked) that is held: the first auto-repeat passes, the rest too, and its release.
+    Eq("PPB", Seq(e, I, "d0 u80 d85"), "start");
+    Eq("P", Ev(e, I, true, 585), "first repeat");
+    Eq("P", Ev(e, I, true, 618), "second repeat");
+    Eq("P", Ev(e, I, false, 700), "release");
+    var log = e.RecentEvents();
+    Eq(ChatterFlags.HeldOn, log[0].Flags & ChatterFlags.HeldOn, "flag");
+    Eq(615000L, log[0].HeldMicros, "held");
+    // and the key works normally afterwards
+    Eq("PP", Seq(e, I, "d1000 u1080"), "after");
+});
+
+Test("plain auto-repeat is never touched", () =>
+{
+    var e = Engine();
+    Eq("PPPPP", Seq(e, I, "d0 d500 d533 d566 u600"), "verdicts");
+    Eq(0, e.RecentEvents().Count, "log lines");
+});
+
+Test("the hotkey toggles filtering and is swallowed, repeats and release too", () =>
+{
+    var e = Engine();
+    bool? toggled = null;
+    e.HotkeyToggled += on => toggled = on;
+    Ev(e, LCtrl, true, 0);
+    Ev(e, LAlt, true, 5);
+    Ev(e, LShift, true, 10);
+    Eq("B", Ev(e, GuardConfig.HotkeyKey, true, 20), "F9 press");
+    Eq(false, toggled, "toggled off");
+    Eq(false, e.Enabled, "engine off");
+    Eq("B", Ev(e, GuardConfig.HotkeyKey, true, 520), "F9 repeat");
+    Eq("B", Ev(e, GuardConfig.HotkeyKey, false, 600), "F9 release");
+    Ev(e, LShift, false, 700);
+    Ev(e, LAlt, false, 705);
+    Ev(e, LCtrl, false, 710);
+    Eq("PP", Seq(e, GuardConfig.HotkeyKey, "d2000 u2080"), "plain F9 afterwards");
+});
+
+Test("with filtering off, would-be chatter passes and is logged", () =>
+{
+    var e = Engine();
+    e.Enabled = false;
+    Eq("PPPP", Seq(e, I, "d0 u80 d85 u88"), "verdicts");
+    var log = e.RecentEvents();
+    Eq(ChatterKind.NotFiltered, log[0].Kind, "kind");
+    Eq(Exempt.FilterOff, log[0].Why, "why");
+    Eq(3000L, log[0].HeldMicros, "held");
+    Eq(0L, e.TotalBlocked, "blocked count");
+});
+
+Test("Shift isn't filtered by default but its chatter is logged", () =>
+{
+    var e = Engine();
+    Eq("PPPP", Seq(e, LShift, "d0 u80 d85 u88"), "verdicts");
+    Eq(Exempt.Modifier, e.RecentEvents()[0].Why, "why");
+    var f = Engine(new GuardConfig { GlobalMs = 30, FilterModifiers = true });
+    Eq("PPBB", Seq(f, LShift, "d0 u80 d85 u88"), "with modifiers filtered");
+});
+
+Test("a key set to 0 is never filtered", () =>
+{
+    var e = Engine(new GuardConfig { GlobalMs = 30, Rules = new Dictionary<int, KeyRule> { [I] = new(0) } });
+    Eq("PPPP", Seq(e, I, "d0 u80 d85 u88"), "verdicts");
+    Eq(Exempt.KeyRule, e.RecentEvents()[0].Why, "why");
+    Eq(30, e.RecentEvents()[0].DelayMs, "judged by the default delay");
+});
+
+Test("a key's own delay applies", () =>
+{
+    var e = Engine(new GuardConfig { GlobalMs = 30, Rules = new Dictionary<int, KeyRule> { [D] = new(43) } });
+    Eq("PPBB", Seq(e, D, "d0 u80 d120 u123"), "40 ms gap blocked at 43");
+    Eq("PPPP", Seq(e, I, "d0 u80 d120 u200"), "other keys keep 30");
+});
+
+Test("per-keyboard settings: own delay, and switched off", () =>
+{
+    var cfg = new GuardConfig
+    {
+        GlobalMs = 30,
+        Devices = new Dictionary<string, DeviceCfg>
+        {
+            ["046D:C359"] = new(true, 50, new Dictionary<int, int>()),
+            ["1234:5678"] = new(false, 30, new Dictionary<int, int>()),
+        },
+    };
+    var e = Engine(cfg);
+    Eq("PPBB", Seq(e, I, "d0 u80 d120 u123", "046D:C359"), "own 50 ms");
+    Eq("PPPP", Seq(e, D, "d0 u80 d85 u88", "1234:5678"), "keyboard off");
+    Eq(Exempt.KeyboardOff, e.RecentEvents()[0].Why, "why");
+    Eq("PPBB", Seq(e, I, "d1000 u1080 d1085 u1088", "9999:0000"), "unknown keyboard follows default");
+});
+
+Test("auto-adjust learns only from chatter a finger can't make", () =>
+{
+    var e = Engine(new GuardConfig { GlobalMs = 30, AutoAdjust = true, AutoMaxMs = 45 });
+    var learned = new List<(int Key, int Ms)>();
+    e.Learned += (_, key, ms) => learned.Add((key, ms));
+    // Quick but normal double presses (held 80 ms) never count.
+    Seq(e, I, "d0 u80 d118 u198 d400 u480 d518 u598");
+    Eq(0, learned.Count, "normal presses");
+    // Two 3 ms presses 38 ms after letting go: learned 42 ms.
+    Seq(e, D, "d0 u80 d118 u121 d400 u480 d518 u521");
+    Eq(1, learned.Count, "learned once");
+    Eq((D, 42), learned[0], "learned value");
+    Eq("PPBB", Seq(e, D, "d1000 u1080 d1118 u1121"), "now blocked");
+});
+
+Test("keystrokes from other programs pass and aren't logged", () =>
+{
+    var e = Engine();
+    Eq("P", Ev(e, I, true, 0, injected: true), "1");
+    Eq("P", Ev(e, I, false, 80, injected: true), "2");
+    Eq("P", Ev(e, I, true, 85, injected: true), "3");
+    Eq("P", Ev(e, I, false, 88, injected: true), "4");
+    Eq(0, e.RecentEvents().Count, "log lines");
+});
+
+Test("the built-in test is blocked and marked as a test", () =>
+{
+    var e = Engine();
+    Eq("P", Ev(e, I, true, 0, injected: true, test: true), "1");
+    Eq("P", Ev(e, I, false, 30, injected: true, test: true), "2");
+    Eq("B", Ev(e, I, true, 38, injected: true, test: true), "3");
+    Eq("B", Ev(e, I, false, 63, injected: true, test: true), "4");
+    Eq(ChatterFlags.Test, e.RecentEvents()[0].Flags & ChatterFlags.Test, "flag");
+});
+
+Test("switching filtering off mid-press still blocks that press's release", () =>
+{
+    var e = Engine();
+    Eq("PPB", Seq(e, I, "d0 u80 d85"), "start");
+    e.Enabled = false;
+    Eq("B", Ev(e, I, false, 88), "release of the blocked press");
+});
+
+Test("the log keeps the newest lines, newest first, and can be cleared", () =>
+{
+    var e = Engine();
+    for (var n = 0; n < ChatterEngine.LogSize + 20; n++)
+        Seq(e, I, $"d{n * 1000} u{n * 1000 + 80} d{n * 1000 + 85} u{n * 1000 + 88}");
+    var log = e.RecentEvents();
+    Eq(ChatterEngine.LogSize, log.Count, "size");
+    Eq(true, log[0].Seq > log[1].Seq, "newest first");
+    var v = e.LogVersion;
+    e.ClearLog();
+    Eq(0, e.RecentEvents().Count, "cleared");
+    Eq(true, e.LogVersion != v, "version moved");
+    Seq(e, I, "d999000 u999080 d999085 u999088");
+    Eq(1, e.RecentEvents().Count, "logs again");
+});
+
+Test("the caught-keys summary counts blocked and slipped presses", () =>
+{
+    var e = Engine();
+    Seq(e, I, "d0 u80 d85 u88 d500 u580 d620 u623");
+    var caught = e.CaughtKeys();
+    Eq(1, caught.Count, "keys");
+    Eq(1, caught[0].Count, "blocked");
+    Eq(1, caught[0].Slipped, "slipped");
+});
+
+// ---- Protect held keys (releases held back for the delay) ----------------------------------------------------------
+
+GuardConfig HoldSafe() => new() { GlobalMs = 30, HoldSafe = true };
+
+Test("protect held keys: a release bounce is swallowed and one release is sent later", () =>
+{
+    var e = Engine(HoldSafe());
+    Eq("PDBD", Seq(e, I, "d0 u80 d82 u85"), "verdicts");
+    Eq(115000L, e.NextReleaseDue(), "release due 30 ms after the last let-go");
+    Eq(0, e.TakeDueReleases(110000).Count, "not yet");
+    var due = e.TakeDueReleases(115000);
+    Eq(1, due.Count, "now");
+    Eq(I, due[0], "which key");
+    Eq(null, e.NextReleaseDue(), "nothing left");
+    var log = e.RecentEvents();
+    Eq(ChatterFlags.KeptHeld, log[0].Flags & ChatterFlags.KeptHeld, "logged as kept held");
+    Eq(2000L, log[0].GapMicros, "gap");
+});
+
+Test("protect held keys: a bounce while holding keeps the key down for programs", () =>
+{
+    var e = Engine(HoldSafe());
+    // first contact 2 ms, bounce, then the real press held with auto-repeat: programs see one long press
+    Eq("PDBPPD", Seq(e, I, "d0 u2 d4 d500 d533 u800"), "verdicts");
+    Eq(830000L, e.NextReleaseDue(), "release due after the real let-go");
+});
+
+Test("protect held keys: a second press after the release was sent passes normally", () =>
+{
+    var e = Engine(HoldSafe());
+    Eq("PD", Seq(e, I, "d0 u80"), "first");
+    Eq(1, e.TakeDueReleases(110000).Count, "sent");
+    Eq("P", Ev(e, I, false, 110.2, replayed: true), "our release comes back through");
+    Eq("PD", Seq(e, I, "d140 u220"), "second press");
+    Eq(0, e.RecentEvents().Count(x => x.Kind == ChatterKind.Blocked), "nothing blocked");
+});
+
+Test("protect held keys: a press after the delay, before the release went out, is re-sent in order", () =>
+{
+    var e = Engine(HoldSafe());
+    Eq("PD", Seq(e, I, "d0 u80"), "first");
+    Eq("R", Ev(e, I, true, 115), "press 35 ms later, release not sent yet");
+    Eq(null, e.NextReleaseDue(), "the held-back release is no longer waiting");
+    Eq("P", Ev(e, I, false, 115.3, replayed: true), "re-sent release");
+    Eq("P", Ev(e, I, true, 115.4, replayed: true), "re-sent press");
+    Eq("D", Ev(e, I, false, 200), "its own release is held back");
+});
+
+Test("protect held keys: Caps Lock, unfiltered keys and a switched-off filter aren't held back", () =>
+{
+    var e = Engine(HoldSafe());
+    Eq("PP", Seq(e, 0x3A, "d0 u80"), "Caps Lock");
+    Eq("PP", Seq(e, LShift, "d0 u80"), "Shift");
+    e.Enabled = false;
+    Eq("PP", Seq(e, I, "d0 u80"), "filter off");
+});
+
+Test("protect held keys: stopping sends every waiting release", () =>
+{
+    var e = Engine(HoldSafe());
+    Seq(e, I, "d0 u80");
+    Seq(e, D, "d10 u90");
+    Eq(2, e.TakeDueReleases(0, all: true).Count, "both");
+    Eq(null, e.NextReleaseDue(), "none left");
+});
+
+Test("protect held keys: the built-in test types one x", () =>
+{
+    var e = Engine(HoldSafe());
+    Eq("P", Ev(e, I, true, 0, injected: true, test: true), "1");
+    Eq("D", Ev(e, I, false, 30, injected: true, test: true), "2");
+    Eq("B", Ev(e, I, true, 38, injected: true, test: true), "3");
+    Eq("D", Ev(e, I, false, 63, injected: true, test: true), "4");
+    Eq(1, e.TakeDueReleases(93000).Count, "one release sent");
+});
+
+Test("YubiKey codes are never filtered unless it has its own settings", () =>
+{
+    const string yubi = "1050:0407";
+    var e = Engine();
+    Eq("PPPPPP", Seq(e, 0x2E, "d0 u5 d10 u15 d20 u25", yubi), "fast repeated c from the key");
+    var f = Engine(new GuardConfig
+    {
+        GlobalMs = 30,
+        Devices = new Dictionary<string, DeviceCfg> { [yubi] = new(true, 30, new Dictionary<int, int>()) },
+    });
+    Eq("PPBB", Seq(f, 0x2E, "d0 u5 d10 u15", yubi), "with its own settings switched on");
+});
+
+Test("paused for a program: chatter passes and is logged as paused", () =>
+{
+    var e = Engine();
+    e.Suspended = true;
+    Eq("PPPP", Seq(e, I, "d0 u80 d85 u88"), "verdicts");
+    Eq(Exempt.Paused, e.RecentEvents()[0].Why, "why");
+});
+
+// ---- Suggested delay per key ------------------------------------------------------------------------------------------
+
+int Suggest(int current, double chatterMs, double humanMs) =>
+    ChatterEngine.SuggestDelayMs(current, (long)(chatterMs * 1000), (long)(humanMs * 1000), out _);
+
+Test("suggested delay: nothing seen keeps the current delay", () => Eq(30, Suggest(30, 0, 0), "30"));
+Test("suggested delay: chatter the delay already covers changes nothing", () => Eq(30, Suggest(30, 21, 0), "21 ms chatter"));
+Test("suggested delay: chatter past the delay raises it with a margin", () => Eq(50, Suggest(30, 41, 0), "41 ms chatter + 20%"));
+Test("suggested delay: a small chatter gets at least 4 ms of margin", () => Eq(10, Suggest(0, 6, 0), "6 ms chatter on an unfiltered key"));
+Test("suggested delay: quick real presses pull it below them", () => Eq(22, Suggest(30, 0, 25), "25 ms re-press"));
+Test("suggested delay: both kept apart when there's room", () => Eq(40, Suggest(30, 33, 50), "33 ms chatter, 50 ms presses"));
+Test("suggested delay: overlap is flagged and stays just above the chatter", () =>
+{
+    var ms = ChatterEngine.SuggestDelayMs(30, 30_000, 33_000, out var tight);
+    Eq(31, ms, "just above 30 ms chatter");
+    Eq(true, tight, "flagged");
+});
+
+Test("each quick re-press is judged switch or finger for the suggestion", () =>
+{
+    var e = Engine();
+    Seq(e, I, "d0 u80 d85 u88");          // bounce: 5 ms gap, 3 ms press → switch
+    Seq(e, I, "d500 u580 d640 u720");     // 60 ms gap, 80 ms presses → finger
+    Seq(e, D, "d0 u80 d121 u125");        // got through: 41 ms gap but a 4 ms press → switch
+    Seq(e, 0x39, "d0 u60 d82 u137");      // Space blocked at 22 ms, held 55 ms → a finger
+    var keys = e.CaughtKeys().ToDictionary(k => k.Key);
+    Eq(5000L, keys[I].ChatterMaxMicros, "I chatter");
+    Eq(60000L, keys[I].HumanMinMicros, "I finger");
+    Eq(41000L, keys[D].ChatterMaxMicros, "D chatter");
+    Eq(0L, keys[D].HumanMinMicros, "D no finger data");
+    Eq(0L, keys[0x39].ChatterMaxMicros, "Space no chatter");
+    Eq(22000L, keys[0x39].HumanMinMicros, "Space finger");
+    Eq(0L, keys[0x39].HumanNextMicros, "Space only once");
+    Eq(50, ChatterEngine.SuggestDelayMs(30, keys[D].ChatterMaxMicros, keys[D].HumanNextMicros, out _), "D suggestion");
+    Eq(30, ChatterEngine.SuggestDelayMs(30, keys[0x39].ChatterMaxMicros, keys[0x39].HumanNextMicros, out _), "one quick Space never lowers it");
+    Eq(30, ChatterEngine.SuggestDelayMs(30, keys[I].ChatterMaxMicros, keys[I].HumanNextMicros, out _), "I suggestion");
+
+    // A second quick real Space press (25 ms): now it's a habit, and the delay goes under the slower of the two.
+    Seq(e, 0x39, "d1000 u1060 d1085 u1140");
+    var space = e.CaughtKeys().Single(k => k.Key == 0x39);
+    Eq(22000L, space.HumanMinMicros, "quickest");
+    Eq(25000L, space.HumanNextMicros, "second");
+    Eq(22, ChatterEngine.SuggestDelayMs(30, space.ChatterMaxMicros, space.HumanNextMicros, out _), "Space suggestion");
+});
+
+Test("the built-in test doesn't count toward suggestions", () =>
+{
+    var e = Engine();
+    Ev(e, I, true, 0, injected: true, test: true);
+    Ev(e, I, false, 30, injected: true, test: true);
+    Ev(e, I, true, 38, injected: true, test: true);
+    Ev(e, I, false, 63, injected: true, test: true);
+    var k = e.CaughtKeys().Single();
+    Eq(0L, k.ChatterMaxMicros, "no chatter data");
+});
+
+Console.WriteLine($"{passed} passed, {failures} failed");
+return failures == 0 ? 0 : 1;
