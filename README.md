@@ -100,25 +100,25 @@ Download from **[the latest release](https://github.com/joshpack/PaxChatterGuard
 
 | File | For |
 | --- | --- |
-| `PaxChatterGuard-1.2.0-win-x64.zip` | Windows 10/11, 64-bit. Needs the .NET 10 Runtime. |
-| `PaxChatterGuard-1.2.0-linux-x64.tar.gz` | Linux, 64-bit. **Untested.** Self-contained, nothing else to install. |
-| `PaxChatterGuard-1.2.0-osx-arm64.tar.gz` | Mac with Apple Silicon. **Untested.** Self-contained. |
-| `PaxChatterGuard-1.2.0-osx-x64.tar.gz` | Mac with an Intel processor. **Untested.** Self-contained. |
+| `PaxChatterGuard-1.2.1-win-x64.zip` | Windows 10/11, 64-bit. Needs the .NET 10 Runtime. |
+| `PaxChatterGuard-1.2.1-linux-x64.tar.gz` | Linux, 64-bit. **Untested.** Self-contained, nothing else to install. |
+| `PaxChatterGuard-1.2.1-osx-arm64.tar.gz` | Mac with Apple Silicon. **Untested.** Self-contained. |
+| `PaxChatterGuard-1.2.1-osx-x64.tar.gz` | Mac with an Intel processor. **Untested.** Self-contained. |
 
 ### Windows
 
 1. Install the **[.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)** (x64) if you don't have it. The plain ".NET Runtime" is enough; the ".NET Desktop Runtime" includes it, so that works too.
-2. Unzip `PaxChatterGuard-1.2.0-win-x64.zip` somewhere permanent, for example into `%LOCALAPPDATA%`. It contains one folder, `PaxChatterGuard`. To update, quit the app and replace that folder; your settings live elsewhere and are kept.
+2. Unzip `PaxChatterGuard-1.2.1-win-x64.zip` somewhere permanent, for example into `%LOCALAPPDATA%`. It contains one folder, `PaxChatterGuard`. To update, quit the app and replace that folder; your settings live elsewhere and are kept.
 3. Run `PaxChatterGuard.exe` from that folder. It doesn't need administrator rights, except to filter programs that themselves run as administrator (see [Programs that run as administrator](#programs-that-run-as-administrator)).
 
-The exe isn't code-signed, so SmartScreen may warn the first time: choose **More info → Run anyway**. To check the download in PowerShell: `Get-FileHash PaxChatterGuard-1.2.0-win-x64.zip` and compare it with the `.sha256` file.
+The exe isn't code-signed, so SmartScreen may warn the first time: choose **More info → Run anyway**. To check the download in PowerShell: `Get-FileHash PaxChatterGuard-1.2.1-win-x64.zip` and compare it with the `.sha256` file.
 
 ### Linux (untested)
 
 ```bash
-sha256sum -c PaxChatterGuard-1.2.0-linux-x64.tar.gz.sha256
+sha256sum -c PaxChatterGuard-1.2.1-linux-x64.tar.gz.sha256
 mkdir -p ~/.local/opt
-tar -xzf PaxChatterGuard-1.2.0-linux-x64.tar.gz -C ~/.local/opt
+tar -xzf PaxChatterGuard-1.2.1-linux-x64.tar.gz -C ~/.local/opt
 ~/.local/opt/PaxChatterGuard/PaxChatterGuard
 ```
 
@@ -143,9 +143,9 @@ The tray icon uses the StatusNotifier (AppIndicator) standard. KDE, Xfce, Cinnam
 ### macOS (untested)
 
 ```bash
-shasum -a 256 -c PaxChatterGuard-1.2.0-osx-arm64.tar.gz.sha256
+shasum -a 256 -c PaxChatterGuard-1.2.1-osx-arm64.tar.gz.sha256
 mkdir -p ~/Applications
-tar -xzf PaxChatterGuard-1.2.0-osx-arm64.tar.gz -C ~/Applications
+tar -xzf PaxChatterGuard-1.2.1-osx-arm64.tar.gz -C ~/Applications
 xattr -dr com.apple.quarantine ~/Applications/PaxChatterGuard   # it isn't signed or notarised
 ~/Applications/PaxChatterGuard/PaxChatterGuard
 ```
