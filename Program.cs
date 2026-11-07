@@ -35,7 +35,12 @@ internal static class Program
         }
 
         if (!AcquireSingleInstance(Restarted ? TimeSpan.FromSeconds(15) : TimeSpan.Zero))
+        {
+            // Already running (perhaps with its tray icon hidden): started by hand, so have that copy open its window.
+            if (!StartMinimized)
+                Services.SingleInstance.SignalRunning();
             return;
+        }
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }

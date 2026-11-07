@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="PaxChatterGuard.Views.SettingsWindow"
         Title="PAX Chatter Guard"
-        Width="500" Height="660" MinWidth="440" MinHeight="480"
+        Width="500" Height="698" MinWidth="440" MinHeight="480"
         WindowStartupLocation="CenterScreen">
 
   <!-- Header, then anything that needs attention, the keyboard being edited, and three tabs. -->
@@ -219,6 +219,19 @@
                             HorizontalAlignment="Left" Margin="0,4,0,0" />
                   </StackPanel>
                   <ToggleSwitch x:Name="AutostartSwitch" Grid.Column="1" OnContent="" OffContent="" />
+                </Grid>
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Spacing="1" VerticalAlignment="Center"
+                              ToolTip.Tip="PAX Toolkit has the same switch. With the icon hidden the filter keeps running; start the app again (or open it from PAX Toolkit) to get this window back.">
+                    <TextBlock Text="Show tray icon" />
+                    <TextBlock x:Name="TrayNote" Text="Also set from PAX Toolkit" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch x:Name="TraySwitch" Grid.Column="1" OnContent="" OffContent="" />
+                </Grid>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                  <TextBlock Text="Closing this window keeps the filter running. Quit stops it." Classes="muted" FontSize="11"
+                             TextWrapping="Wrap" VerticalAlignment="Center" />
+                  <Button x:Name="QuitButton" Grid.Column="1" Content="Quit" MinHeight="32" Padding="14,4" />
                 </Grid>
               </StackPanel>
             </Border>

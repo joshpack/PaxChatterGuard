@@ -3,7 +3,7 @@
 **Stops a worn mechanical keyboard from typing double letters.** A small tray app that catches key chatter (one press that the switch reports as two) and drops the extra press before any program sees it.
 
 <p align="center">
-  <img src="docs/screenshots/settings.png" width="500" alt="PAX Chatter Guard settings window on its Filter tab: keyboard picker, filtering on, 30 ms sensitivity and the Try it test">
+  <img src="docs/screenshots/settings.png" width="500" alt="PAX Chatter Guard settings window on its Filter tab, under its own dark title bar: keyboard picker, filtering on, 30 ms sensitivity, mouse buttons and the Try it test">
 </p>
 
 When a key goes down again only a few milliseconds after it was released, that is almost never a person: real fast typing leaves about 50 ms between letting go of a key and pressing it again, while a bouncing switch does it in about 10. PAX Chatter Guard sits between the keyboard and everything else and throws away presses that come back too soon.
@@ -27,6 +27,7 @@ When a key goes down again only a few milliseconds after it was released, that i
 - **Leaves other input alone.** Keystrokes that programs create (macros, remote desktop, on-screen keyboards, input methods) pass through untouched.
 - **Light.** The windows only exist while they are open. Sitting in the tray it uses about 13 MB of memory and no CPU while you aren't typing (or, with mouse buttons filtered, using the mouse). The monitor's log is a small fixed buffer in memory that is never saved.
 - **Start when I sign in**, optional. Running as administrator, it starts as administrator at sign-in too, without Windows asking each time.
+- **Works with [PAX Toolkit](https://github.com/joshpack/PaxToolkit).** Its tray icon can be turned off and on there (or with **Show tray icon** in the settings; both stay in sync). With the icon hidden the filter keeps running, and starting the app again, or opening it from PAX Toolkit, brings the window back. Every window has the same dark PAX title bar and opens where you last left it, at the same size.
 
 <p align="center">
   <img src="docs/screenshots/monitor.png" width="560" alt="The chatter monitor: totals for blocked, got through, not filtered and close calls, then a list of keys such as I blocked 5 ms after letting go, D got through with a 4 ms press and an Add to list · 46 ms button, and Space blocked with a Was me button">
@@ -36,7 +37,7 @@ The settings have three tabs: **Filter** (on/off, sensitivity, mouse buttons, th
 
 | Keys tab | Options tab | One keyboard with its own settings |
 | --- | --- | --- |
-| <img src="docs/screenshots/settings-keys.png" width="300" alt="The Keys tab: caught keys, each with what happened and the delay that suits it best, and a Suggested 10 ms · use button for Left Shift"> | <img src="docs/screenshots/settings-options.png" width="300" alt="The Options tab: modifier keys, Protect held keys, auto-adjust, the hotkey, start when I sign in, and the pause list"> | <img src="docs/screenshots/per-keyboard.png" width="300" alt="One keyboard chosen above the tabs, with its own 38 ms sensitivity, its own on/off switch and a Use default button"> |
+| <img src="docs/screenshots/settings-keys.png" width="300" alt="The Keys tab: caught keys, each with what happened and the delay that suits it best, and a Suggested 10 ms · use button for Left Shift"> | <img src="docs/screenshots/settings-options.png" width="300" alt="The Options tab: modifier keys, Protect held keys, auto-adjust, the hotkey, start when I sign in, show tray icon, Quit, and the pause list"> | <img src="docs/screenshots/per-keyboard.png" width="300" alt="One keyboard chosen above the tabs, with its own 38 ms sensitivity, its own on/off switch and a Use default button"> |
 
 ## How it works
 
@@ -100,25 +101,25 @@ Download from **[the latest release](https://github.com/joshpack/PaxChatterGuard
 
 | File | For |
 | --- | --- |
-| `PaxChatterGuard-1.2.1-win-x64.zip` | Windows 10/11, 64-bit. Needs the .NET 10 Runtime. |
-| `PaxChatterGuard-1.2.1-linux-x64.tar.gz` | Linux, 64-bit. **Untested.** Self-contained, nothing else to install. |
-| `PaxChatterGuard-1.2.1-osx-arm64.tar.gz` | Mac with Apple Silicon. **Untested.** Self-contained. |
-| `PaxChatterGuard-1.2.1-osx-x64.tar.gz` | Mac with an Intel processor. **Untested.** Self-contained. |
+| `PaxChatterGuard-1.3.0-win-x64.zip` | Windows 10/11, 64-bit. Needs the .NET 10 Runtime. |
+| `PaxChatterGuard-1.3.0-linux-x64.tar.gz` | Linux, 64-bit. **Untested.** Self-contained, nothing else to install. |
+| `PaxChatterGuard-1.3.0-osx-arm64.tar.gz` | Mac with Apple Silicon. **Untested.** Self-contained. |
+| `PaxChatterGuard-1.3.0-osx-x64.tar.gz` | Mac with an Intel processor. **Untested.** Self-contained. |
 
 ### Windows
 
 1. Install the **[.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)** (x64) if you don't have it. The plain ".NET Runtime" is enough; the ".NET Desktop Runtime" includes it, so that works too.
-2. Unzip `PaxChatterGuard-1.2.1-win-x64.zip` somewhere permanent, for example into `%LOCALAPPDATA%`. It contains one folder, `PaxChatterGuard`. To update, quit the app and replace that folder; your settings live elsewhere and are kept.
+2. Unzip `PaxChatterGuard-1.3.0-win-x64.zip` somewhere permanent, for example into `%LOCALAPPDATA%`. It contains one folder, `PaxChatterGuard`. To update, quit the app and replace that folder; your settings live elsewhere and are kept.
 3. Run `PaxChatterGuard.exe` from that folder. It doesn't need administrator rights, except to filter programs that themselves run as administrator (see [Programs that run as administrator](#programs-that-run-as-administrator)).
 
-The exe isn't code-signed, so SmartScreen may warn the first time: choose **More info → Run anyway**. To check the download in PowerShell: `Get-FileHash PaxChatterGuard-1.2.1-win-x64.zip` and compare it with the `.sha256` file.
+The exe isn't code-signed, so SmartScreen may warn the first time: choose **More info → Run anyway**. To check the download in PowerShell: `Get-FileHash PaxChatterGuard-1.3.0-win-x64.zip` and compare it with the `.sha256` file.
 
 ### Linux (untested)
 
 ```bash
-sha256sum -c PaxChatterGuard-1.2.1-linux-x64.tar.gz.sha256
+sha256sum -c PaxChatterGuard-1.3.0-linux-x64.tar.gz.sha256
 mkdir -p ~/.local/opt
-tar -xzf PaxChatterGuard-1.2.1-linux-x64.tar.gz -C ~/.local/opt
+tar -xzf PaxChatterGuard-1.3.0-linux-x64.tar.gz -C ~/.local/opt
 ~/.local/opt/PaxChatterGuard/PaxChatterGuard
 ```
 
@@ -143,9 +144,9 @@ The tray icon uses the StatusNotifier (AppIndicator) standard. KDE, Xfce, Cinnam
 ### macOS (untested)
 
 ```bash
-shasum -a 256 -c PaxChatterGuard-1.2.1-osx-arm64.tar.gz.sha256
+shasum -a 256 -c PaxChatterGuard-1.3.0-osx-arm64.tar.gz.sha256
 mkdir -p ~/Applications
-tar -xzf PaxChatterGuard-1.2.1-osx-arm64.tar.gz -C ~/Applications
+tar -xzf PaxChatterGuard-1.3.0-osx-arm64.tar.gz -C ~/Applications
 xattr -dr com.apple.quarantine ~/Applications/PaxChatterGuard   # it isn't signed or notarised
 ~/Applications/PaxChatterGuard/PaxChatterGuard
 ```
@@ -160,7 +161,7 @@ This download is a plain folder, not a signed `.app` bundle, so expect rough edg
 
 - The settings window opens and a tray icon appears (an X on a green tile; it dims while filtering is off).
 - **Click the tray icon** to open the settings. **Right-click** it for *Settings…*, *Chatter monitor…*, *Filtering* (on/off), *Restart as administrator* (Windows, while not running as administrator) and *Quit*.
-- Closing the window keeps the filter running in the tray. *Quit* stops it.
+- Closing the window keeps the filter running in the tray. *Quit* (in the tray menu, or at the bottom of the Options tab) stops it.
 - Open the **Chatter monitor** and type normally for a while: anything that looks like chatter shows up there, blocked or not.
 - Switch on **Start when I sign in** to start with the system. It then starts quietly in the tray (`--minimized`) and only opens the window when something needs attention.
 
@@ -193,7 +194,7 @@ Not sure whether to trust the filter yet? Leave filtering off and keep the monit
 | `--safe-test N` | Quit by itself after *N* seconds. Meant for testing changes to the filter, so a mistake can never leave a broken filter on your keyboard. |
 | `--restarted` | Used by *Restart as administrator*: waits up to 15 seconds for the copy that is closing to finish, instead of giving up at once. |
 
-Only one copy runs at a time; starting a second one while the first is running does nothing.
+Only one copy runs at a time. Starting a second one while the first is running opens the first one's settings window instead (the way back in when its tray icon is hidden).
 
 ## Settings file
 
@@ -205,7 +206,7 @@ Everything you change is saved as JSON:
 | Linux | `~/.config/PaxChatterGuard/settings.json` (or under `$XDG_CONFIG_HOME`) |
 | macOS | `~/.config/PaxChatterGuard/settings.json` |
 
-Main fields: `Enabled`, `GlobalMs` (the sensitivity), `Rules` (scancode → ms, 0 = never filter; mouse buttons are 65537 to 65541: left, right, middle, back, forward), `FilterModifiers`, `HotkeyEnabled`, `AutoAdjust`, `AutoMaxMs` (also the limit for mouse buttons, so raise it above `MouseMs` for auto-adjust to raise a button's delay), `HoldSafe` (protect held keys and buttons, Windows), `FilterMouse` (also filter mouse buttons, Windows), `MouseMs` (the mouse delay), `PausedPrograms` (exe names that pause filtering, Windows), `Devices` (per-keyboard settings, Windows; mouse buttons always follow the defaults) and `LinuxDevices` (keyboards to filter on Linux; empty means all). Delete the file to go back to the defaults. The caught-keys list and the chatter monitor's log live in memory only and are never saved.
+Main fields: `Enabled`, `GlobalMs` (the sensitivity), `Rules` (scancode → ms, 0 = never filter; mouse buttons are 65537 to 65541: left, right, middle, back, forward), `FilterModifiers`, `HotkeyEnabled`, `AutoAdjust`, `AutoMaxMs` (also the limit for mouse buttons, so raise it above `MouseMs` for auto-adjust to raise a button's delay), `HoldSafe` (protect held keys and buttons, Windows), `FilterMouse` (also filter mouse buttons, Windows), `MouseMs` (the mouse delay), `PausedPrograms` (exe names that pause filtering, Windows), `Devices` (per-keyboard settings, Windows; mouse buttons always follow the defaults) and `LinuxDevices` (keyboards to filter on Linux; empty means all). Delete the file to go back to the defaults. Where each window was left (size, position, maximized) is kept next to it in `windows.json`. The caught-keys list and the chatter monitor's log live in memory only and are never saved.
 
 ## Uninstall
 
@@ -264,6 +265,10 @@ For automated tests of the whole app, the environment variable `PAXCG_ACCEPT_INJ
 | `Services/SignInTask.cs` | The scheduled task that starts it as administrator at sign-in (Windows) |
 | `Views/SettingsWindow.axaml(.cs)` | The settings window |
 | `Views/MonitorWindow.axaml(.cs)` | The chatter monitor |
+| `Views/Chrome.cs` | Puts the PAX title bar on each window and remembers where it was |
+| `PaxStandard.cs` | Shared with the other PAX apps: the title bar, remembered window placement, and the PAX Toolkit link (`%APPDATA%\PAX\toolkit.json`) |
+| `Services/TrayLink.cs` | Shows or hides the tray icon as PAX Toolkit or the settings say, live |
+| `Services/SingleInstance.cs` | A second start opens the running copy's window |
 | `SpadeIcon.cs` | The app and tray icon, drawn in code |
 | `tests/EngineTests/` | Tests for the filter rules, and the sign-in task's definition |
 | `docs/screenshots/` | The pictures in this file |

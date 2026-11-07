@@ -43,7 +43,7 @@ public partial class MonitorWindow : Window
         InitializeComponent();
         _svc = svc;
         Icon = SpadeIcon.CreateWindowIcon();
-        Ctl<Path>("Spade").Data = SpadeIcon.Geometry;
+        Chrome.UseBrandMark(Ctl<Path>("Spade"));
         if (OperatingSystem.IsWindows() && Platform.Elevation.IsElevated)
             Title = "Chatter Monitor — PAX Chatter Guard (administrator)";
 
@@ -69,6 +69,7 @@ public partial class MonitorWindow : Window
 
         UpdateStatus();
         Refresh();
+        Chrome.Apply(this, "monitor");
     }
 
     private T Ctl<T>(string name) where T : Control => this.FindControl<T>(name)!;

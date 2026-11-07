@@ -6,6 +6,7 @@ using Avalonia.Threading;
 using PaxChatterGuard.Platform;
 using PaxChatterGuard.Services;
 using PaxChatterGuard.Views;
+using PaxStandard;
 
 namespace PaxChatterGuard;
 
@@ -20,7 +21,15 @@ public partial class App : Application
     private WindowIcon? _onIcon, _offIcon;
     private bool _lastActive = true;
 
-    public override void Initialize() => AvaloniaXamlLoader.Load(this);
+    private TrayLink? _trayLink;
+    private IDisposable? _showListener;
+
+    public override void Initialize()
+    {
+        AvaloniaXamlLoader.Load(this);
+        PaxChrome.Configure(Chrome.AppId, GuardSettings.Folder);
+        Styles.Add(PaxChrome.Styles());
+    }
 
     public override void OnFrameworkInitializationCompleted()
     {
@@ -34,6 +43,11 @@ public partial class App : Application
             _onIcon = SpadeIcon.CreateWindowIcon(64, active: true);
             _offIcon = SpadeIcon.CreateWindowIcon(64, active: false);
             BuildTray();
+            // PAX Toolkit (or the app's own switch) can hide the tray icon; the app keeps running either way.
+            _trayLink = new TrayLink(Chrome.AppId, ApplyTrayIcon);
+            _tray.IsVisible = _trayLink.Visible;
+            // Started again while running: open the window (the only way in while the tray icon is hidden).
+            _showListener = SingleInstance.Listen(() => Dispatcher.UIThread.Post(OpenSettings));
             _svc.Changed += () => Dispatcher.UIThread.Post(UpdateTray);
             _svc.Start();
 
@@ -114,11 +128,19 @@ public partial class App : Application
     {
         if (_window is not null)
         {
+            if (_window.WindowState == WindowState.Minimized)
+                _window.WindowState = WindowState.Normal;
             _window.Activate();
             return;
         }
 
-        _window = new SettingsWindow(_svc) { OpenMonitor = OpenMonitor, RestartAsAdmin = RestartAsAdminAsync };
+        _window = new SettingsWindow(_svc)
+        {
+            OpenMonitor = OpenMonitor,
+            RestartAsAdmin = RestartAsAdminAsync,
+            SetTrayIcon = v => _trayLink?.Set(v),
+            QuitApp = Quit,
+        };
         _window.Closed += (_, _) =>
         {
             _window = null;
@@ -133,6 +155,8 @@ public partial class App : Application
     {
         if (_monitor is not null)
         {
+            if (_monitor.WindowState == WindowState.Minimized)
+                _monitor.WindowState = WindowState.Normal;
             _monitor.Activate();
             return;
         }
@@ -169,8 +193,17 @@ public partial class App : Application
         }
     }
 
+    /// <summary>toolkit.json says to show or hide the tray icon (UI thread).</summary>
+    private void ApplyTrayIcon(bool visible)
+    {
+        _tray.IsVisible = visible;
+        _window?.ShowTrayIconState(visible);
+    }
+
     private void Quit()
     {
+        _showListener?.Dispose();
+        _trayLink?.Dispose();
         _window?.Close();
         _monitor?.Close();
         _svc.Dispose();

@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="PaxChatterGuard.Views.MonitorWindow"
         Title="Chatter Monitor — PAX Chatter Guard"
-        Width="580" Height="660" MinWidth="460" MinHeight="420"
+        Width="580" Height="698" MinWidth="460" MinHeight="420"
         WindowStartupLocation="CenterScreen">
 
   <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="22,20,22,16">

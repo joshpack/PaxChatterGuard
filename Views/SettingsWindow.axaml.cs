@@ -49,7 +49,7 @@ public partial class SettingsWindow : Window
         InitializeComponent();
         _svc = svc;
         Icon = SpadeIcon.CreateWindowIcon();
-        Ctl<Path>("Spade").Data = SpadeIcon.Geometry;
+        Chrome.UseBrandMark(Ctl<Path>("Spade"));
         if (OperatingSystem.IsWindows() && Platform.Elevation.IsElevated)
             Title = "PAX Chatter Guard (administrator)";
 
@@ -72,6 +72,46 @@ public partial class SettingsWindow : Window
             svc.Changed -= OnServiceChanged;
             svc.RulesChanged -= OnLearned;
         };
+
+        ShowTrayIconState(PaxStandard.PaxLink.TrayIconVisible(Chrome.AppId));
+        Ctl<ToggleSwitch>("TraySwitch").IsCheckedChanged += (_, _) =>
+        {
+            if (_loading)
+                return;
+            var v = Ctl<ToggleSwitch>("TraySwitch").IsChecked == true;
+            if (SetTrayIcon is { } set)
+                set(v);
+            else
+                PaxStandard.PaxLink.SetTrayIconVisible(Chrome.AppId, v);
+            ShowTrayIconState(v);
+        };
+        Ctl<Button>("QuitButton").Click += (_, _) =>
+        {
+            if (QuitApp is { } quit)
+                quit();
+            else
+                Close();
+        };
+
+        Chrome.Apply(this, "settings");
+    }
+
+    /// <summary>Shows or hides the tray icon (the app does that, and writes toolkit.json so PAX Toolkit agrees).</summary>
+    public Action<bool>? SetTrayIcon { get; init; }
+
+    /// <summary>Quits the whole app, filter and all.</summary>
+    public Action? QuitApp { get; init; }
+
+    /// <summary>Puts the "Show tray icon" switch in line with toolkit.json (changed here or from PAX Toolkit).</summary>
+    public void ShowTrayIconState(bool visible)
+    {
+        var was = _loading;
+        _loading = true;
+        Ctl<ToggleSwitch>("TraySwitch").IsChecked = visible;
+        Ctl<TextBlock>("TrayNote").Text = visible
+            ? "Also set from PAX Toolkit"
+            : "Hidden. Start the app again or use PAX Toolkit to open this window";
+        _loading = was;
     }
 
     private T Ctl<T>(string name) where T : Control => this.FindControl<T>(name)!;
