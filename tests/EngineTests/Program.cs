@@ -730,5 +730,122 @@ Test("a Run command's arguments are kept when the startup entry moves", () =>
     Eq("", pxdStandard.pxdMigrate.ArgsOf("\"C:\\Apps\\Old.exe\""), "none");
 });
 
+// ---- Update before start (a fake release on a local listener; nothing real is updated) --------------------------------
+
+Test("no update check for --self-test or a bin\\ build", () =>
+{
+    // Pointed at a port nothing listens on, so even a slip could never reach GitHub.
+    Environment.SetEnvironmentVariable("PXD_UPDATE_API", "http://127.0.0.1:1");
+    try
+    {
+        Eq(false, pxdStandard.pxdUpdate.BeforeStart("joshpack/pxdChatterGuard", @"^pxdChatterGuard-.*-win-x64\.zip$", ["--self-test"]), "--self-test");
+        Eq(true, AppContext.BaseDirectory.Contains(@"\bin\", StringComparison.OrdinalIgnoreCase) || !OperatingSystem.IsWindows(), "tests run from bin");
+        Eq(false, pxdStandard.pxdUpdate.BeforeStart("joshpack/pxdChatterGuard", @"^pxdChatterGuard-.*-win-x64\.zip$", ["--minimized"]), "bin build");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PXD_UPDATE_API", null);
+    }
+});
+
+Test("no update while another copy of the same exe runs", () =>
+{
+    if (!OperatingSystem.IsWindows())
+        return;
+    Eq(false, pxdStandard.pxdUpdate.OtherCopyRunning(Environment.ProcessPath!), "only this copy: free to update");
+    // A second, windowless copy of a system exe stands in for an already running app.
+    var ping = Path.Combine(Environment.SystemDirectory, "PING.EXE");
+    using var other = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ping, "-n 6 127.0.0.1")
+    {
+        UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true,
+    })!;
+    try
+    {
+        Thread.Sleep(300);
+        Eq(true, pxdStandard.pxdUpdate.OtherCopyRunning(ping), "another copy running: files left alone");
+        Eq(false, pxdStandard.pxdUpdate.OtherCopyRunning(Path.Combine(Path.GetTempPath(), "pxd-not-running-" + Guid.NewGuid().ToString("N") + ".exe")), "a name nothing runs under");
+    }
+    finally
+    {
+        try { other.Kill(); } catch { }
+    }
+});
+
+Test("a newer release replaces the app's files once its checksum matches", () =>
+{
+    var root = Path.Combine(Path.GetTempPath(), "pxdcg-update-" + Guid.NewGuid().ToString("N"));
+    var app = Path.Combine(root, "app");
+    var pkg = Path.Combine(root, "pkg", "pxdChatterGuard");
+    Directory.CreateDirectory(app);
+    Directory.CreateDirectory(pkg);
+    File.WriteAllText(Path.Combine(app, "pxdChatterGuard.exe"), "old exe");
+    File.WriteAllText(Path.Combine(app, "pxdChatterGuard.dll"), "old dll");
+    File.WriteAllText(Path.Combine(pkg, "pxdChatterGuard.exe"), "new exe");
+    File.WriteAllText(Path.Combine(pkg, "pxdChatterGuard.dll"), "new dll");
+    File.WriteAllText(Path.Combine(pkg, "extra.dll"), "new file");
+    const string asset = "pxdChatterGuard-9.0.0-win-x64.zip";
+    var zip = Path.Combine(root, asset);
+    System.IO.Compression.ZipFile.CreateFromDirectory(Path.Combine(root, "pkg"), zip);
+    var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(zip))).ToLowerInvariant();
+
+    var port = new Random().Next(41000, 49000);
+    var prefix = $"http://127.0.0.1:{port}/";
+    using var listener = new System.Net.HttpListener();
+    listener.Prefixes.Add(prefix);
+    listener.Start();
+    var badSum = false;
+    var serving = Task.Run(async () =>
+    {
+        while (listener.IsListening)
+        {
+            System.Net.HttpListenerContext ctx;
+            try { ctx = await listener.GetContextAsync(); } catch { return; }
+            byte[] body = ctx.Request.Url!.AbsolutePath switch
+            {
+                "/repos/joshpack/pxdChatterGuard/releases/latest" => System.Text.Encoding.UTF8.GetBytes(
+                    $"{{\"tag_name\":\"v9.0.0\",\"assets\":[{{\"name\":\"pxdChatterGuard-9.0.0-linux-x64.tar.gz\",\"browser_download_url\":\"{prefix}tar\"}},{{\"name\":\"{asset}\",\"browser_download_url\":\"{prefix}zip\"}},{{\"name\":\"{asset}.sha256\",\"browser_download_url\":\"{prefix}sum\"}}]}}"),
+                "/zip" => File.ReadAllBytes(zip),
+                "/sum" => System.Text.Encoding.ASCII.GetBytes((badSum ? new string('0', 64) : hash) + "  " + asset),
+                _ => [],
+            };
+            ctx.Response.StatusCode = body.Length == 0 ? 404 : 200;
+            await ctx.Response.OutputStream.WriteAsync(body);
+            ctx.Response.Close();
+        }
+    });
+
+    Environment.SetEnvironmentVariable("PXD_UPDATE_API", prefix.TrimEnd('/'));
+    try
+    {
+        const string pattern = @"^pxdChatterGuard-.*-win-x64\.zip$";
+        var plan = pxdStandard.pxdUpdate.FindUpdateAsync("joshpack/pxdChatterGuard", pattern, new Version(1, 4, 1)).GetAwaiter().GetResult();
+        Eq(prefix + "zip", plan?.Zip, "the Windows zip is picked");
+        Eq(prefix + "sum", plan?.Sum, "with its checksum");
+        Eq(true, pxdStandard.pxdUpdate.FindUpdateAsync("joshpack/pxdChatterGuard", pattern, new Version(9, 0, 0)).GetAwaiter().GetResult() is null, "current copy: nothing to do");
+
+        var exe = Path.Combine(app, "pxdChatterGuard.exe");
+        badSum = true;
+        Eq(false, pxdStandard.pxdUpdate.ApplyAsync(plan!.Value.Zip, plan.Value.Sum, app, exe, ["--minimized"], start: false).GetAwaiter().GetResult(), "bad checksum refused");
+        Eq("old exe", File.ReadAllText(exe), "nothing changed");
+        Eq(false, File.Exists(Path.Combine(app, "extra.dll")), "nothing added");
+
+        badSum = false;
+        Eq(true, pxdStandard.pxdUpdate.ApplyAsync(plan.Value.Zip, plan.Value.Sum, app, exe, ["--minimized"], start: false).GetAwaiter().GetResult(), "update applied");
+        Eq("new exe", File.ReadAllText(exe), "exe swapped");
+        Eq("new dll", File.ReadAllText(Path.Combine(app, "pxdChatterGuard.dll")), "dll swapped");
+        Eq(true, File.Exists(Path.Combine(app, "extra.dll")), "new file added");
+        Eq(true, File.Exists(exe + ".pxdold"), "old exe set aside");
+        pxdStandard.pxdUpdate.CleanUp(app);
+        Eq(0, Directory.GetFiles(app, "*.pxdold").Length, "set-aside files removed at the next start");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PXD_UPDATE_API", null);
+        listener.Stop();
+        serving.Wait(2000);
+        try { Directory.Delete(root, recursive: true); } catch { }
+    }
+});
+
 Console.WriteLine($"{passed} passed, {failures} failed");
 return failures == 0 ? 0 : 1;

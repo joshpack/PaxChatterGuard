@@ -21,9 +21,20 @@ internal static class Program
     /// </summary>
     public static bool Restarted { get; private set; }
 
+    /// <summary>Whether this start may update the app before it opens (not for --safe-test).</summary>
+    public static bool UpdatesBeforeStart(string[] args) =>
+        !args.Any(a => a.Equals("--safe-test", StringComparison.OrdinalIgnoreCase));
+
     [STAThread]
     public static void Main(string[] args)
     {
+        // Running an installed copy updates it first (Windows only; a no-op for bin\ builds, offline or slow GitHub). It
+        // also runs when started as administrator by the sign-in task or "Restart as administrator": that copy can update
+        // its own folder and restarts with the same arguments. --safe-test runs are for trying changes, so they never update.
+        if (UpdatesBeforeStart(args)
+            && pxdStandard.pxdUpdate.BeforeStart("joshpack/pxdChatterGuard", @"^pxdChatterGuard-.*-win-x64\.zip$", args))
+            return;
+
         for (var i = 0; i < args.Length; i++)
         {
             if (args[i].Equals("--minimized", StringComparison.OrdinalIgnoreCase))

@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>pxdChatterGuard</RootNamespace>
     <AssemblyName>pxdChatterGuard</AssemblyName>
-    <Version>1.4.0</Version>
+    <Version>1.4.1</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon Condition="Exists('Assets\pxdChatterGuard.ico')">Assets\pxdChatterGuard.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
