@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using PaxChatterGuard.Core;
+using pxdChatterGuard.Core;
 
-namespace PaxChatterGuard.Platform;
+namespace pxdChatterGuard.Platform;
 
 /// <summary>
 /// macOS: a Quartz event tap on key-down/key-up. Returning no event from the tap callback drops the keystroke. Needs the
@@ -34,7 +34,7 @@ public sealed class MacBackend : IKeyboardBackend
     public string Name => "macOS event tap";
     public bool IsRunning => _running;
     public string? SetupHint =>
-        "Open System Settings → Privacy & Security → Accessibility, switch PAX Chatter Guard on, then press Retry.";
+        "Open System Settings → Privacy & Security → Accessibility, switch pxd Chatter Guard on, then press Retry.";
     public event Action<string>? Notice;
     public IReadOnlyList<KeyboardDevice> Devices => Array.Empty<KeyboardDevice>();
     public void SetDeviceFilter(IReadOnlyCollection<string>? names) { }

@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.Versioning;
 using System.Security;
 
-namespace PaxChatterGuard.Services;
+namespace pxdChatterGuard.Services;
 
 /// <summary>
 /// Windows, while running as administrator: "Start when I sign in" as a scheduled task that starts the app with highest
@@ -11,7 +11,7 @@ namespace PaxChatterGuard.Services;
 /// </summary>
 public static class SignInTask
 {
-    public const string Name = "PaxChatterGuard";
+    public const string Name = "pxdChatterGuard";
 
     private const int NotFound = unchecked((int)0x80070002);
     private const int PathNotFound = unchecked((int)0x80070003);
@@ -26,7 +26,7 @@ public static class SignInTask
         <?xml version="1.0" encoding="UTF-16"?>
         <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
           <RegistrationInfo>
-            <Description>Starts PAX Chatter Guard as administrator when you sign in, so it can filter programs that run as administrator too. Switch off "Start when I sign in" in its settings to remove this.</Description>
+            <Description>Starts pxd Chatter Guard as administrator when you sign in, so it can filter programs that run as administrator too. Switch off "Start when I sign in" in its settings to remove this.</Description>
           </RegistrationInfo>
           <Triggers>
             <LogonTrigger>
@@ -77,13 +77,13 @@ public static class SignInTask
     /// without administrator rights (it was made as administrator): it is there, but how it starts the app is unknown.
     /// </summary>
     [SupportedOSPlatform("windows")]
-    public static bool Find(out string? command, out string? arguments)
+    public static bool Find(out string? command, out string? arguments, string name = Name)
     {
         command = arguments = null;
         object task;
         try
         {
-            task = Call(RootFolder(), "GetTask", Name)!;
+            task = Call(RootFolder(), "GetTask", name)!;
         }
         catch (Exception ex) when (Code(ex) is NotFound or PathNotFound)
         {
@@ -118,11 +118,11 @@ public static class SignInTask
 
     /// <summary>Deletes the task. True when it is gone (or never was); false when Windows wants administrator rights for it.</summary>
     [SupportedOSPlatform("windows")]
-    public static bool TryDelete()
+    public static bool TryDelete(string name = Name)
     {
         try
         {
-            Call(RootFolder(), "DeleteTask", Name, 0);
+            Call(RootFolder(), "DeleteTask", name, 0);
             return true;
         }
         catch (Exception ex) when (Code(ex) is NotFound or PathNotFound)
@@ -133,6 +133,28 @@ public static class SignInTask
         {
             return false;
         }
+    }
+
+    /// <summary>Whether the task <paramref name="name"/> is switched on in Task Scheduler (null when it can't be read).</summary>
+    [SupportedOSPlatform("windows")]
+    public static bool? IsEnabled(string name)
+    {
+        try
+        {
+            return Get(Call(RootFolder(), "GetTask", name)!, "Enabled") as bool?;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Switches this app's task off (it stays registered), as Task Scheduler's Disable does.</summary>
+    [SupportedOSPlatform("windows")]
+    public static void Disable()
+    {
+        var task = Call(RootFolder(), "GetTask", Name)!;
+        task.GetType().InvokeMember("Enabled", BindingFlags.SetProperty, null, task, [false]);
     }
 
     [SupportedOSPlatform("windows")]

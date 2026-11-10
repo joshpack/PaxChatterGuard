@@ -5,11 +5,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>PaxChatterGuard</RootNamespace>
-    <AssemblyName>PaxChatterGuard</AssemblyName>
-    <Version>1.3.0</Version>
+    <RootNamespace>pxdChatterGuard</RootNamespace>
+    <AssemblyName>pxdChatterGuard</AssemblyName>
+    <Version>1.4.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon Condition="Exists('Assets\PaxChatterGuard.ico')">Assets\PaxChatterGuard.ico</ApplicationIcon>
+    <ApplicationIcon Condition="Exists('Assets\pxdChatterGuard.ico')">Assets\pxdChatterGuard.ico</ApplicationIcon>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Keep memory low: no background GC thread, no profile-guided tiering, no ICU culture data. -->
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>

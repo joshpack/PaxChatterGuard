@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="PaxChatterGuard.Views.SettingsWindow"
-        Title="PAX Chatter Guard"
+        x:Class="pxdChatterGuard.Views.SettingsWindow"
+        Title="pxd Chatter Guard"
         Width="500" Height="698" MinWidth="440" MinHeight="480"
         WindowStartupLocation="CenterScreen">
 
@@ -21,7 +21,7 @@
           <Path x:Name="Spade" Fill="#04140C" Width="100" Height="100" Stretch="Uniform" />
         </Viewbox>
       </Border>
-      <TextBlock Grid.Column="1" Text="PAX Chatter Guard" FontSize="18" FontWeight="Bold" Classes="neon"
+      <TextBlock Grid.Column="1" Text="pxd Chatter Guard" FontSize="18" FontWeight="Bold" Classes="neon"
                  VerticalAlignment="Center" Margin="12,0,0,0" />
       <Border x:Name="StatusPill" Grid.Column="2" CornerRadius="999" Padding="11,5" VerticalAlignment="Center"
               Background="#0C2A1D" BorderBrush="#146B44" BorderThickness="1">
@@ -222,9 +222,9 @@
                 </Grid>
                 <Grid ColumnDefinitions="*,Auto">
                   <StackPanel Spacing="1" VerticalAlignment="Center"
-                              ToolTip.Tip="PAX Toolkit has the same switch. With the icon hidden the filter keeps running; start the app again (or open it from PAX Toolkit) to get this window back.">
+                              ToolTip.Tip="pxd Toolkit has the same switch. With the icon hidden the filter keeps running; start the app again (or open it from pxd Toolkit) to get this window back.">
                     <TextBlock Text="Show tray icon" />
-                    <TextBlock x:Name="TrayNote" Text="Also set from PAX Toolkit" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+                    <TextBlock x:Name="TrayNote" Text="Also set from pxd Toolkit" Classes="muted" FontSize="11" TextWrapping="Wrap" />
                   </StackPanel>
                   <ToggleSwitch x:Name="TraySwitch" Grid.Column="1" OnContent="" OffContent="" />
                 </Grid>

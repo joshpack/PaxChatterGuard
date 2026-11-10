@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace PaxChatterGuard.Platform;
+namespace pxdChatterGuard.Platform;
 
 /// <summary>
 /// Gives back memory the app isn't using right now. After the settings window closes (or at start-up in the tray) almost

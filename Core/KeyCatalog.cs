@@ -1,4 +1,4 @@
-namespace PaxChatterGuard.Core;
+namespace pxdChatterGuard.Core;
 
 /// <summary>
 /// Keys are identified by their physical position, using PS/2 "set 1" scancodes: 0x1E is always the key right of Caps

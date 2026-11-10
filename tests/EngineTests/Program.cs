@@ -1,4 +1,4 @@
-using PaxChatterGuard.Core;
+using pxdChatterGuard.Core;
 
 // Tests for the filter rules. Each test feeds a made-up stream of key presses and releases (times in milliseconds) into
 // a fresh engine and checks what it let through and what it logged. Nothing here touches a real keyboard.
@@ -663,8 +663,8 @@ Test("the built-in test doesn't count toward suggestions", () =>
 
 Test("the sign-in task starts the app as administrator at this user's sign-in, with no time limit", () =>
 {
-    const string exe = @"C:\Users\Zoë & Co\Apps\Pax <1>\PaxChatterGuard.exe";
-    var xml = PaxChatterGuard.Services.SignInTask.Xml("S-1-5-21-1-2-3-1001", @"PC\Zoë & Co", exe, "--minimized", @"C:\Users\Zoë & Co\Apps\Pax <1>\");
+    const string exe = @"C:\Users\Zoë & Co\Apps\pxd <1>\pxdChatterGuard.exe";
+    var xml = pxdChatterGuard.Services.SignInTask.Xml("S-1-5-21-1-2-3-1001", @"PC\Zoë & Co", exe, "--minimized", @"C:\Users\Zoë & Co\Apps\pxd <1>\");
     var doc = System.Xml.Linq.XDocument.Parse(xml); // throws if the escaping is off
     System.Xml.Linq.XNamespace t = "http://schemas.microsoft.com/windows/2004/02/mit/task";
     string At(params string[] path) => path.Aggregate(doc.Root!, (e, name) => e.Element(t + name) ?? throw new Exception($"no {name}")).Value;
@@ -680,6 +680,54 @@ Test("the sign-in task starts the app as administrator at this user's sign-in, w
     Eq("false", At("Settings", "StopIfGoingOnBatteries"), "keeps running on battery");
     Eq("IgnoreNew", At("Settings", "MultipleInstancesPolicy"), "one copy");
     Eq("4", At("Settings", "Priority"), "normal priority");
+});
+
+// ---- First start after the rename (in a temp folder; real settings are never touched) -----------------------------------
+
+Test("the settings folder moves from the former name once, and a second start changes nothing", () =>
+{
+    var root = Path.Combine(Path.GetTempPath(), "pxdcg-migrate-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        var former = Path.Combine(root, pxdStandard.pxdMigrate.FormerName(pxdChatterGuard.Services.Migration.AppId));
+        var current = Path.Combine(root, "pxdChatterGuard");
+        Eq(false, former == current, "former name differs");
+        Directory.CreateDirectory(former);
+        File.WriteAllText(Path.Combine(former, "settings.json"), "{\"GlobalMs\":27}");
+        File.WriteAllText(Path.Combine(former, "windows.json"), "{}");
+
+        Eq(true, pxdChatterGuard.Services.Migration.DataFolder(root), "first start moves it");
+        Eq(false, Directory.Exists(former), "former folder gone");
+        Eq("{\"GlobalMs\":27}", File.ReadAllText(Path.Combine(current, "settings.json")), "settings kept");
+        Eq(true, File.Exists(Path.Combine(current, "windows.json")), "window placement kept");
+
+        File.WriteAllText(Path.Combine(current, "settings.json"), "{\"GlobalMs\":31}");
+        Eq(false, pxdChatterGuard.Services.Migration.DataFolder(root), "second start: nothing to do");
+        Eq("{\"GlobalMs\":31}", File.ReadAllText(Path.Combine(current, "settings.json")), "newer settings untouched");
+
+        // An old folder left next to a new one (say, an old copy ran again) never overwrites the new settings.
+        Directory.CreateDirectory(former);
+        File.WriteAllText(Path.Combine(former, "settings.json"), "{\"GlobalMs\":99}");
+        Eq(false, pxdChatterGuard.Services.Migration.DataFolder(root), "both there: no move");
+        Eq("{\"GlobalMs\":31}", File.ReadAllText(Path.Combine(current, "settings.json")), "new settings win");
+
+        // Nothing there at all: nothing made.
+        Directory.Delete(root, recursive: true);
+        Eq(false, pxdChatterGuard.Services.Migration.DataFolder(root), "fresh install: no move");
+        Eq(false, Directory.Exists(current), "no folder made");
+    }
+    finally
+    {
+        if (Directory.Exists(root))
+            Directory.Delete(root, recursive: true);
+    }
+});
+
+Test("a Run command's arguments are kept when the startup entry moves", () =>
+{
+    Eq("--minimized", pxdStandard.pxdMigrate.ArgsOf("\"C:\\Users\\x\\Apps\\Old\\Old.exe\" --minimized"), "quoted");
+    Eq("--minimized", pxdStandard.pxdMigrate.ArgsOf("C:\\Apps\\Old.exe --minimized"), "unquoted");
+    Eq("", pxdStandard.pxdMigrate.ArgsOf("\"C:\\Apps\\Old.exe\""), "none");
 });
 
 Console.WriteLine($"{passed} passed, {failures} failed");

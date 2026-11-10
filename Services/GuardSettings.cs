@@ -1,7 +1,7 @@
 using System.Text.Json;
-using PaxChatterGuard.Core;
+using pxdChatterGuard.Core;
 
-namespace PaxChatterGuard.Services;
+namespace pxdChatterGuard.Services;
 
 /// <summary>One keyboard's own settings.</summary>
 public sealed class DeviceProfile
@@ -65,11 +65,11 @@ public sealed class GuardSettings
     /// <summary>Per-key exceptions: key → milliseconds (0 means never filter that key).</summary>
     public Dictionary<int, int> Rules { get; set; } = new();
 
-    /// <summary>Where the settings live. PAXCG_DATA_DIR points it elsewhere (tests use it so they never touch real settings).</summary>
+    /// <summary>Where the settings live. PXDCG_DATA_DIR points it elsewhere (tests use it so they never touch real settings).</summary>
     public static string Folder =>
-        Environment.GetEnvironmentVariable("PAXCG_DATA_DIR") is { Length: > 0 } dir
+        Environment.GetEnvironmentVariable("PXDCG_DATA_DIR") is { Length: > 0 } dir
             ? dir
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PaxChatterGuard");
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "pxdChatterGuard");
 
     private static string FilePath => Path.Combine(Folder, "settings.json");
 

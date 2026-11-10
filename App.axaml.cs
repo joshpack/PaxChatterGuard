@@ -3,12 +3,12 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
-using PaxChatterGuard.Platform;
-using PaxChatterGuard.Services;
-using PaxChatterGuard.Views;
-using PaxStandard;
+using pxdChatterGuard.Platform;
+using pxdChatterGuard.Services;
+using pxdChatterGuard.Views;
+using pxdStandard;
 
-namespace PaxChatterGuard;
+namespace pxdChatterGuard;
 
 public partial class App : Application
 {
@@ -27,8 +27,8 @@ public partial class App : Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
-        PaxChrome.Configure(Chrome.AppId, GuardSettings.Folder);
-        Styles.Add(PaxChrome.Styles());
+        pxdChrome.Configure(Chrome.AppId, GuardSettings.Folder);
+        Styles.Add(pxdChrome.Styles());
     }
 
     public override void OnFrameworkInitializationCompleted()
@@ -43,7 +43,7 @@ public partial class App : Application
             _onIcon = SpadeIcon.CreateWindowIcon(64, active: true);
             _offIcon = SpadeIcon.CreateWindowIcon(64, active: false);
             BuildTray();
-            // PAX Toolkit (or the app's own switch) can hide the tray icon; the app keeps running either way.
+            // pxd Toolkit (or the app's own switch) can hide the tray icon; the app keeps running either way.
             _trayLink = new TrayLink(Chrome.AppId, ApplyTrayIcon);
             _tray.IsVisible = _trayLink.Visible;
             // Started again while running: open the window (the only way in while the tray icon is hidden).
@@ -97,7 +97,7 @@ public partial class App : Application
         _tray = new TrayIcon
         {
             Icon = _onIcon,
-            ToolTipText = "PAX Chatter Guard",
+            ToolTipText = "pxd Chatter Guard",
             Menu = menu,
         };
         _tray.Clicked += (_, _) => OpenSettings();
@@ -181,7 +181,7 @@ public partial class App : Application
     private void UpdateTray()
     {
         _toggleItem.IsChecked = _svc.Settings.Enabled;
-        var name = OperatingSystem.IsWindows() && Elevation.IsElevated ? "PAX Chatter Guard (administrator)" : "PAX Chatter Guard";
+        var name = OperatingSystem.IsWindows() && Elevation.IsElevated ? "pxd Chatter Guard (administrator)" : "pxd Chatter Guard";
         _tray.ToolTipText = $"{name} — {_svc.StatusText}";
 
         // The tray icon dims when nothing is being filtered (also while a program out of reach is in front).

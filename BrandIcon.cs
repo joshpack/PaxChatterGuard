@@ -4,10 +4,10 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using ShapePath = Avalonia.Controls.Shapes.Path;
 
-namespace PaxChatterGuard;
+namespace pxdChatterGuard;
 
 /// <summary>
-/// PAX Chatter Guard's icon: a keycap guarded by a green shield on a midnight-slate tile (grey when filtering is off).
+/// pxd Chatter Guard's icon: a keycap guarded by a green shield on a midnight-slate tile (grey when filtering is off).
 /// Drawn from vector shapes so it stays crisp at every size; used for the tray, windows and the exe's .ico.
 /// </summary>
 public static class BrandIcon
@@ -105,4 +105,4 @@ public static class BrandIcon
 
     private static string RoundRect(double x1, double y1, double x2, double y2, double r) =>
         FormattableString.Invariant($"M{x1 + r},{y1} L{x2 - r},{y1} Q{x2},{y1} {x2},{y1 + r} L{x2},{y2 - r} Q{x2},{y2} {x2 - r},{y2} L{x1 + r},{y2} Q{x1},{y2} {x1},{y2 - r} L{x1},{y1 + r} Q{x1},{y1} {x1 + r},{y1} Z");
-}
+}

@@ -1,6 +1,6 @@
 using System.IO.Pipes;
 
-namespace PaxChatterGuard.Services;
+namespace pxdChatterGuard.Services;
 
 /// <summary>
 /// "Open the window" from a second copy: the running copy listens on a named pipe, and a copy started while it runs
@@ -9,7 +9,7 @@ namespace PaxChatterGuard.Services;
 /// </summary>
 public static class SingleInstance
 {
-    public static string DefaultPipeName => "PaxChatterGuard.show." + Environment.UserName;
+    public static string DefaultPipeName => "pxdChatterGuard.show." + Environment.UserName;
 
     /// <summary>Tells the running copy to open its window. True if it answered.</summary>
     public static bool SignalRunning(string? pipeName = null, int timeoutMs = 1500)

@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 
-namespace PaxChatterGuard.Platform;
+namespace pxdChatterGuard.Platform;
 
 /// <summary>
 /// Windows: tells which program is in front, so filtering can pause for the programs on the pause list, and whether it runs

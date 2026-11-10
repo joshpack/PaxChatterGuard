@@ -1,18 +1,29 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- The filter rules tested on their own: no keyboard hook, no window, nothing typed anywhere. Run with `dotnet run`.
-       Also the definition of the start-as-administrator task (only the text; nothing is registered). -->
+       Also the definition of the start-as-administrator task (only the text; nothing is registered), and the one-time
+       settings-folder move from the app's former name (in a temp folder; real settings are never touched). -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="..\..\Core\*.cs" Link="Core\%(Filename)%(Extension)" />
     <Compile Include="..\..\Services\SignInTask.cs" Link="Services\SignInTask.cs" />
+    <Compile Include="..\..\Services\Migration.cs" Link="Services\Migration.cs" />
+    <Compile Include="..\..\Services\Autostart.cs" Link="Services\Autostart.cs" />
+    <Compile Include="..\..\Platform\Elevation.cs" Link="Platform\Elevation.cs" />
+    <Compile Include="..\..\pxdStandard.cs" Link="pxdStandard.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- pxdStandard.cs (shared by every pxd app) also holds the title bar, so it needs Avalonia to compile. -->
+    <PackageReference Include="Avalonia" Version="12.1.4" />
   </ItemGroup>
 
 </Project>

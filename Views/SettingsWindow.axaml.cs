@@ -3,12 +3,12 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
-using PaxChatterGuard.Core;
-using PaxChatterGuard.Services;
+using pxdChatterGuard.Core;
+using pxdChatterGuard.Services;
 using Ellipse = Avalonia.Controls.Shapes.Ellipse;
 using Path = Avalonia.Controls.Shapes.Path;
 
-namespace PaxChatterGuard.Views;
+namespace pxdChatterGuard.Views;
 
 /// <summary>
 /// The whole interface: one small window. It is created when opened and thrown away when closed, so while the app sits
@@ -51,7 +51,7 @@ public partial class SettingsWindow : Window
         Icon = SpadeIcon.CreateWindowIcon();
         Chrome.UseBrandMark(Ctl<Path>("Spade"));
         if (OperatingSystem.IsWindows() && Platform.Elevation.IsElevated)
-            Title = "PAX Chatter Guard (administrator)";
+            Title = "pxd Chatter Guard (administrator)";
 
         Load();
         Wire();
@@ -73,7 +73,7 @@ public partial class SettingsWindow : Window
             svc.RulesChanged -= OnLearned;
         };
 
-        ShowTrayIconState(PaxStandard.PaxLink.TrayIconVisible(Chrome.AppId));
+        ShowTrayIconState(pxdStandard.pxdLink.TrayIconVisible(Chrome.AppId));
         Ctl<ToggleSwitch>("TraySwitch").IsCheckedChanged += (_, _) =>
         {
             if (_loading)
@@ -82,7 +82,7 @@ public partial class SettingsWindow : Window
             if (SetTrayIcon is { } set)
                 set(v);
             else
-                PaxStandard.PaxLink.SetTrayIconVisible(Chrome.AppId, v);
+                pxdStandard.pxdLink.SetTrayIconVisible(Chrome.AppId, v);
             ShowTrayIconState(v);
         };
         Ctl<Button>("QuitButton").Click += (_, _) =>
@@ -96,21 +96,21 @@ public partial class SettingsWindow : Window
         Chrome.Apply(this, "settings");
     }
 
-    /// <summary>Shows or hides the tray icon (the app does that, and writes toolkit.json so PAX Toolkit agrees).</summary>
+    /// <summary>Shows or hides the tray icon (the app does that, and writes toolkit.json so pxd Toolkit agrees).</summary>
     public Action<bool>? SetTrayIcon { get; init; }
 
     /// <summary>Quits the whole app, filter and all.</summary>
     public Action? QuitApp { get; init; }
 
-    /// <summary>Puts the "Show tray icon" switch in line with toolkit.json (changed here or from PAX Toolkit).</summary>
+    /// <summary>Puts the "Show tray icon" switch in line with toolkit.json (changed here or from pxd Toolkit).</summary>
     public void ShowTrayIconState(bool visible)
     {
         var was = _loading;
         _loading = true;
         Ctl<ToggleSwitch>("TraySwitch").IsChecked = visible;
         Ctl<TextBlock>("TrayNote").Text = visible
-            ? "Also set from PAX Toolkit"
-            : "Hidden. Start the app again or use PAX Toolkit to open this window";
+            ? "Also set from pxd Toolkit"
+            : "Hidden. Start the app again or use pxd Toolkit to open this window";
         _loading = was;
     }
 
@@ -384,8 +384,12 @@ public partial class SettingsWindow : Window
 
         // Running as administrator, but set to start without those rights: offer to start as administrator instead.
         Ctl<Button>("AutostartAdminButton").IsVisible = error is null && elevated && mode == AutostartMode.On;
+        // The start-as-administrator task from before 1.4.0 can only be moved to the new name by a copy running as administrator.
+        var formerTask = !elevated && Autostart.FormerTaskPending();
         Ctl<TextBlock>("AutostartNote").Text = error ?? (mode, elevated) switch
         {
+            (AutostartMode.AsAdministrator, false) when formerTask =>
+                "Starts as administrator through the task an earlier version made. Restart as administrator once to update it",
             (AutostartMode.AsAdministrator, _) or (AutostartMode.Off, true) => "Runs quietly in the tray, as administrator, without asking",
             (AutostartMode.On, true) => "Starts without administrator rights",
             _ => "Runs quietly in the tray",

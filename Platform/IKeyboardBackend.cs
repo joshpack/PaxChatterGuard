@@ -1,6 +1,6 @@
-using PaxChatterGuard.Core;
+using pxdChatterGuard.Core;
 
-namespace PaxChatterGuard.Platform;
+namespace pxdChatterGuard.Platform;
 
 /// <summary>A keyboard the backend can filter (only meaningful on Linux, where filtering is per device).</summary>
 public sealed record KeyboardDevice(string Name, string Path);

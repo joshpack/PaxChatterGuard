@@ -1,9 +1,9 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
-using PaxChatterGuard.Core;
+using pxdChatterGuard.Core;
 
-namespace PaxChatterGuard.Platform;
+namespace pxdChatterGuard.Platform;
 
 /// <summary>
 /// Linux: the approach used by input remappers. Each keyboard's evdev device is grabbed exclusively, its events are
@@ -14,7 +14,7 @@ namespace PaxChatterGuard.Platform;
 [SupportedOSPlatform("linux")]
 public sealed unsafe class LinuxBackend : IKeyboardBackend
 {
-    private const string VirtualName = "PAX Chatter Guard virtual keyboard";
+    private const string VirtualName = "pxd Chatter Guard virtual keyboard";
 
     private const int O_RDONLY = 0, O_RDWR = 2, O_NONBLOCK = 0x800;
     private const ushort EV_SYN = 0, EV_KEY = 1, EV_MSC = 4, EV_LED = 0x11;
@@ -40,7 +40,7 @@ public sealed unsafe class LinuxBackend : IKeyboardBackend
     public IReadOnlyList<KeyboardDevice> Devices => _devices;
 
     public string? SetupHint =>
-        "PAX Chatter Guard needs to read your keyboards and create a virtual one.\n" +
+        "pxd Chatter Guard needs to read your keyboards and create a virtual one.\n" +
         "1) Add yourself to the input group:  sudo usermod -aG input $USER\n" +
         "2) Allow that group to use uinput:  echo 'KERNEL==\"uinput\", GROUP=\"input\", MODE=\"0660\"' | sudo tee /etc/udev/rules.d/99-uinput.rules\n" +
         "3) Load the module at boot:  echo uinput | sudo tee /etc/modules-load.d/uinput.conf && sudo modprobe uinput\n" +

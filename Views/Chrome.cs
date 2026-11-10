@@ -1,16 +1,16 @@
 using Avalonia.Controls;
 using Avalonia.Media;
-using PaxStandard;
+using pxdStandard;
 
-namespace PaxChatterGuard.Views;
+namespace pxdChatterGuard.Views;
 
 /// <summary>
-/// The PAX App Standard for this app's windows: the PAX title bar (icon, name, minimize / maximize / close) instead of the
+/// The pxd App Standard for this app's windows: the pxd title bar (icon, name, minimize / maximize / close) instead of the
 /// system one, and the window's size, position and maximized state remembered under a key in windows.json.
 /// </summary>
 public static class Chrome
 {
-    public const string AppId = "PaxChatterGuard";
+    public const string AppId = "pxdChatterGuard";
 
     private static IImage? _icon;
 
@@ -18,7 +18,7 @@ public static class Chrome
     public static IImage Icon => _icon ??= BrandIcon.Render(36);
 
     /// <summary>
-    /// Puts the PAX title bar above the window's content and restores its placement. Call at the end of the constructor,
+    /// Puts the pxd title bar above the window's content and restores its placement. Call at the end of the constructor,
     /// once the title is final. macOS keeps its own title bar (its window buttons sit on the left and can't be removed).
     /// </summary>
     public static void Apply(Window w, string placementKey)
@@ -26,10 +26,10 @@ public static class Chrome
         if (!OperatingSystem.IsMacOS() && w.Content is Control content)
         {
             w.Content = null;
-            w.Content = PaxChrome.Wrap(w, content, w.Title ?? "PAX Chatter Guard", Icon, resizable: w.CanResize);
+            w.Content = pxdChrome.Wrap(w, content, w.Title ?? "pxd Chatter Guard", Icon, resizable: w.CanResize);
         }
 
-        PaxChrome.RememberPlacement(w, placementKey);
+        pxdChrome.RememberPlacement(w, placementKey);
     }
 
     /// <summary>

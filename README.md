@@ -1,12 +1,12 @@
-# PAX Chatter Guard
+# pxd Chatter Guard
 
 **Stops a worn mechanical keyboard from typing double letters.** A small tray app that catches key chatter (one press that the switch reports as two) and drops the extra press before any program sees it.
 
 <p align="center">
-  <img src="docs/screenshots/settings.png" width="500" alt="PAX Chatter Guard settings window on its Filter tab, under its own dark title bar: keyboard picker, filtering on, 30 ms sensitivity, mouse buttons and the Try it test">
+  <img src="docs/screenshots/settings.png" width="500" alt="pxd Chatter Guard settings window on its Filter tab, under its own dark title bar: keyboard picker, filtering on, 30 ms sensitivity, mouse buttons and the Try it test">
 </p>
 
-When a key goes down again only a few milliseconds after it was released, that is almost never a person: real fast typing leaves about 50 ms between letting go of a key and pressing it again, while a bouncing switch does it in about 10. PAX Chatter Guard sits between the keyboard and everything else and throws away presses that come back too soon.
+When a key goes down again only a few milliseconds after it was released, that is almost never a person: real fast typing leaves about 50 ms between letting go of a key and pressing it again, while a bouncing switch does it in about 10. pxd Chatter Guard sits between the keyboard and everything else and throws away presses that come back too soon.
 
 ## Features
 
@@ -27,7 +27,7 @@ When a key goes down again only a few milliseconds after it was released, that i
 - **Leaves other input alone.** Keystrokes that programs create (macros, remote desktop, on-screen keyboards, input methods) pass through untouched.
 - **Light.** The windows only exist while they are open. Sitting in the tray it uses about 13 MB of memory and no CPU while you aren't typing (or, with mouse buttons filtered, using the mouse). The monitor's log is a small fixed buffer in memory that is never saved.
 - **Start when I sign in**, optional. Running as administrator, it starts as administrator at sign-in too, without Windows asking each time.
-- **Works with [PAX Toolkit](https://github.com/joshpack/PaxToolkit).** Its tray icon can be turned off and on there (or with **Show tray icon** in the settings; both stay in sync). With the icon hidden the filter keeps running, and starting the app again, or opening it from PAX Toolkit, brings the window back. Every window has the same dark PAX title bar and opens where you last left it, at the same size.
+- **Works with [pxd Toolkit](https://github.com/joshpack/pxdToolkit).** Its tray icon can be turned off and on there (or with **Show tray icon** in the settings; both stay in sync). With the icon hidden the filter keeps running, and starting the app again, or opening it from pxd Toolkit, brings the window back. Every window has the same dark pxd title bar and opens where you last left it, at the same size.
 
 <p align="center">
   <img src="docs/screenshots/monitor.png" width="560" alt="The chatter monitor: totals for blocked, got through, not filtered and close calls, then a list of keys such as I blocked 5 ms after letting go, D got through with a 4 ms press and an Add to list · 46 ms button, and Space blocked with a Was me button">
@@ -70,7 +70,7 @@ Only the Windows version has been used on real hardware so far. The Linux and ma
 
 | System | Status | Notes |
 | --- | --- | --- |
-| Windows 11, x64 | **Tested** | In daily use. Programs that run as administrator are only filtered while PAX Chatter Guard runs as administrator too ([below](#programs-that-run-as-administrator)). |
+| Windows 11, x64 | **Tested** | In daily use. Programs that run as administrator are only filtered while pxd Chatter Guard runs as administrator too ([below](#programs-that-run-as-administrator)). |
 | Windows 10, x64 | Should work, untested | Same build as Windows 11, same note about programs that run as administrator. |
 | Linux x64 (X11, Wayland, console) | **Builds, untested** | Needs the permissions below. You choose which keyboards to filter from a tick list; per-keyboard sensitivity is Windows only. |
 | macOS, Apple Silicon (arm64) | **Builds, untested** | Needs the Accessibility permission. Shift, Ctrl, Option and Cmd are never filtered, and the on/off hotkey isn't available (use the tray menu). Not signed or notarised. |
@@ -79,7 +79,7 @@ Only the Windows version has been used on real hardware so far. The Linux and ma
 
 ### Programs that run as administrator
 
-Windows keeps programs apart by their rights (User Interface Privilege Isolation): a program without administrator rights can't see the keys typed into a program that runs as administrator, and a low-level keyboard hook is no exception. PAX Chatter Guard normally runs without those rights, so while a program that runs as administrator is in front (some games and their launchers, Task Manager, Registry Editor, an administrator command prompt), nothing typed into it reaches the filter. The chatter monitor sees nothing there either, and the on/off hotkey doesn't work. With mouse buttons filtered, clicks on such a program's windows are out of reach in the same way.
+Windows keeps programs apart by their rights (User Interface Privilege Isolation): a program without administrator rights can't see the keys typed into a program that runs as administrator, and a low-level keyboard hook is no exception. pxd Chatter Guard normally runs without those rights, so while a program that runs as administrator is in front (some games and their launchers, Task Manager, Registry Editor, an administrator command prompt), nothing typed into it reaches the filter. The chatter monitor sees nothing there either, and the on/off hotkey doesn't work. With mouse buttons filtered, clicks on such a program's windows are out of reach in the same way.
 
 When that happens, the app says so instead of failing quietly:
 
@@ -90,37 +90,37 @@ To have it start as administrator every time, restart it as administrator, then 
 
 Two things to keep in mind:
 
-- A program that starts as administrator without asking can be swapped out to get those rights: anything that can change the files in its folder could then run as administrator at your next sign-in. If you use this, keep the app in a folder only administrators can change, such as `C:\Program Files\PaxChatterGuard`, not under your user folder.
+- A program that starts as administrator without asking can be swapped out to get those rights: anything that can change the files in its folder could then run as administrator at your next sign-in. If you use this, keep the app in a folder only administrators can change, such as `C:\Program Files\pxdChatterGuard`, not under your user folder.
 - If your Windows account isn't an administrator, Windows asks for an administrator's password, and that copy runs as the administrator's account, with that account's settings.
 
 Whether a program runs as administrator is read from its access token. A program Windows won't let it look into at all (one of the system's, or another account's) is taken to run as administrator too.
 
 ## Install
 
-Download from **[the latest release](https://github.com/joshpack/PaxChatterGuard/releases/latest)**. Every file has a `.sha256` next to it for checking the download.
+Download from **[the latest release](https://github.com/joshpack/pxdChatterGuard/releases/latest)**. Every file has a `.sha256` next to it for checking the download.
 
 | File | For |
 | --- | --- |
-| `PaxChatterGuard-1.3.0-win-x64.zip` | Windows 10/11, 64-bit. Needs the .NET 10 Runtime. |
-| `PaxChatterGuard-1.3.0-linux-x64.tar.gz` | Linux, 64-bit. **Untested.** Self-contained, nothing else to install. |
-| `PaxChatterGuard-1.3.0-osx-arm64.tar.gz` | Mac with Apple Silicon. **Untested.** Self-contained. |
-| `PaxChatterGuard-1.3.0-osx-x64.tar.gz` | Mac with an Intel processor. **Untested.** Self-contained. |
+| `pxdChatterGuard-1.4.0-win-x64.zip` | Windows 10/11, 64-bit. Needs the .NET 10 Runtime. |
+| `pxdChatterGuard-1.4.0-linux-x64.tar.gz` | Linux, 64-bit. **Untested.** Self-contained, nothing else to install. |
+| `pxdChatterGuard-1.4.0-osx-arm64.tar.gz` | Mac with Apple Silicon. **Untested.** Self-contained. |
+| `pxdChatterGuard-1.4.0-osx-x64.tar.gz` | Mac with an Intel processor. **Untested.** Self-contained. |
 
 ### Windows
 
 1. Install the **[.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)** (x64) if you don't have it. The plain ".NET Runtime" is enough; the ".NET Desktop Runtime" includes it, so that works too.
-2. Unzip `PaxChatterGuard-1.3.0-win-x64.zip` somewhere permanent, for example into `%LOCALAPPDATA%`. It contains one folder, `PaxChatterGuard`. To update, quit the app and replace that folder; your settings live elsewhere and are kept.
-3. Run `PaxChatterGuard.exe` from that folder. It doesn't need administrator rights, except to filter programs that themselves run as administrator (see [Programs that run as administrator](#programs-that-run-as-administrator)).
+2. Unzip `pxdChatterGuard-1.4.0-win-x64.zip` somewhere permanent, for example into `%LOCALAPPDATA%`. It contains one folder, `pxdChatterGuard`. To update, quit the app and replace that folder; your settings live elsewhere and are kept.
+3. Run `pxdChatterGuard.exe` from that folder. It doesn't need administrator rights, except to filter programs that themselves run as administrator (see [Programs that run as administrator](#programs-that-run-as-administrator)).
 
-The exe isn't code-signed, so SmartScreen may warn the first time: choose **More info → Run anyway**. To check the download in PowerShell: `Get-FileHash PaxChatterGuard-1.3.0-win-x64.zip` and compare it with the `.sha256` file.
+The exe isn't code-signed, so SmartScreen may warn the first time: choose **More info → Run anyway**. To check the download in PowerShell: `Get-FileHash pxdChatterGuard-1.4.0-win-x64.zip` and compare it with the `.sha256` file.
 
 ### Linux (untested)
 
 ```bash
-sha256sum -c PaxChatterGuard-1.3.0-linux-x64.tar.gz.sha256
+sha256sum -c pxdChatterGuard-1.4.0-linux-x64.tar.gz.sha256
 mkdir -p ~/.local/opt
-tar -xzf PaxChatterGuard-1.3.0-linux-x64.tar.gz -C ~/.local/opt
-~/.local/opt/PaxChatterGuard/PaxChatterGuard
+tar -xzf pxdChatterGuard-1.4.0-linux-x64.tar.gz -C ~/.local/opt
+~/.local/opt/pxdChatterGuard/pxdChatterGuard
 ```
 
 **Permissions.** The filter has to read your keyboards and create a virtual one, which ordinary users can't do by default. Run these once, then log out and back in:
@@ -144,16 +144,16 @@ The tray icon uses the StatusNotifier (AppIndicator) standard. KDE, Xfce, Cinnam
 ### macOS (untested)
 
 ```bash
-shasum -a 256 -c PaxChatterGuard-1.3.0-osx-arm64.tar.gz.sha256
+shasum -a 256 -c pxdChatterGuard-1.4.0-osx-arm64.tar.gz.sha256
 mkdir -p ~/Applications
-tar -xzf PaxChatterGuard-1.3.0-osx-arm64.tar.gz -C ~/Applications
-xattr -dr com.apple.quarantine ~/Applications/PaxChatterGuard   # it isn't signed or notarised
-~/Applications/PaxChatterGuard/PaxChatterGuard
+tar -xzf pxdChatterGuard-1.4.0-osx-arm64.tar.gz -C ~/Applications
+xattr -dr com.apple.quarantine ~/Applications/pxdChatterGuard   # it isn't signed or notarised
+~/Applications/pxdChatterGuard/pxdChatterGuard
 ```
 
 Use the `osx-x64` file on an Intel Mac.
 
-**Permissions.** macOS only lets an app filter the keyboard after you allow it. Open **System Settings → Privacy & Security → Accessibility** and switch on PAX Chatter Guard. When you start it from Terminal, macOS may list **Terminal** instead; switch that on. Then press **Retry** in the app's window. If macOS also asks for **Input Monitoring**, allow that too.
+**Permissions.** macOS only lets an app filter the keyboard after you allow it. Open **System Settings → Privacy & Security → Accessibility** and switch on pxd Chatter Guard. When you start it from Terminal, macOS may list **Terminal** instead; switch that on. Then press **Retry** in the app's window. If macOS also asks for **Input Monitoring**, allow that too.
 
 This download is a plain folder, not a signed `.app` bundle, so expect rough edges on macOS.
 
@@ -167,12 +167,14 @@ This download is a plain folder, not a signed `.app` bundle, so expect rough edg
 
 | System | What "Start when I sign in" adds |
 | --- | --- |
-| Windows | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value `PaxChatterGuard` |
-| Windows, running as administrator | A Task Scheduler task, `\PaxChatterGuard`: starts the app with highest privileges (as administrator, no prompt) when you sign in, with no time limit, also on battery. The Run value above is removed, so only one copy starts. |
-| Linux | `~/.config/autostart/pax-chatter-guard.desktop` |
-| macOS | `~/Library/LaunchAgents/com.paxchatterguard.app.plist` |
+| Windows | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value `pxdChatterGuard` |
+| Windows, running as administrator | A Task Scheduler task, `\pxdChatterGuard`: starts the app with highest privileges (as administrator, no prompt) when you sign in, with no time limit, also on battery. The Run value above is removed, so only one copy starts. |
+| Linux | `~/.config/autostart/pxd-chatter-guard.desktop` |
+| macOS | `~/Library/LaunchAgents/com.pxdchatterguard.app.plist` |
 
 On Windows, switching it off removes both the Run value and the task, whichever is there.
+
+**Updating from a version before 1.4.0** (the app went by an earlier name then): on its first start, 1.4.0 moves the settings folder and an existing Run value, LaunchAgent or autostart entry to the names above, pointing at the new copy. It never switches starting at sign-in on when it was off. A start-as-administrator task from before 1.4.0 can only be replaced by a copy that runs as administrator, so it stays as it is until the app next runs as administrator (*Restart as administrator* does it), which swaps it for the new task, on or off as it was.
 
 ### Choosing a sensitivity
 
@@ -202,9 +204,9 @@ Everything you change is saved as JSON:
 
 | System | File |
 | --- | --- |
-| Windows | `%APPDATA%\PaxChatterGuard\settings.json` |
-| Linux | `~/.config/PaxChatterGuard/settings.json` (or under `$XDG_CONFIG_HOME`) |
-| macOS | `~/.config/PaxChatterGuard/settings.json` |
+| Windows | `%APPDATA%\pxdChatterGuard\settings.json` |
+| Linux | `~/.config/pxdChatterGuard/settings.json` (or under `$XDG_CONFIG_HOME`) |
+| macOS | `~/.config/pxdChatterGuard/settings.json` |
 
 Main fields: `Enabled`, `GlobalMs` (the sensitivity), `Rules` (scancode → ms, 0 = never filter; mouse buttons are 65537 to 65541: left, right, middle, back, forward), `FilterModifiers`, `HotkeyEnabled`, `AutoAdjust`, `AutoMaxMs` (also the limit for mouse buttons, so raise it above `MouseMs` for auto-adjust to raise a button's delay), `HoldSafe` (protect held keys and buttons, Windows), `FilterMouse` (also filter mouse buttons, Windows), `MouseMs` (the mouse delay), `PausedPrograms` (exe names that pause filtering, Windows), `Devices` (per-keyboard settings, Windows; mouse buttons always follow the defaults) and `LinuxDevices` (keyboards to filter on Linux; empty means all). Delete the file to go back to the defaults. Where each window was left (size, position, maximized) is kept next to it in `windows.json`. The caught-keys list and the chatter monitor's log live in memory only and are never saved.
 
@@ -221,17 +223,17 @@ Main fields: `Enabled`, `GlobalMs` (the sensitivity), `Rules` (scancode → ms, 
 Needs the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ```bash
-git clone https://github.com/joshpack/PaxChatterGuard.git
-cd PaxChatterGuard
+git clone https://github.com/joshpack/pxdChatterGuard.git
+cd pxdChatterGuard
 dotnet run -- --safe-test 60          # try it; quits by itself after a minute
 
 # Windows (framework-dependent: needs the .NET 10 Runtime)
-dotnet publish -c Release -r win-x64 --self-contained false -p:Version=1.2.0 -p:DebugType=none -o publish/win-x64
+dotnet publish -c Release -r win-x64 --self-contained false -p:Version=1.4.0 -p:DebugType=none -o publish/win-x64
 
 # Linux and macOS (self-contained)
-dotnet publish -c Release -r linux-x64 --self-contained true -p:Version=1.2.0 -p:DebugType=none -o publish/linux-x64
-dotnet publish -c Release -r osx-arm64 --self-contained true -p:Version=1.2.0 -p:DebugType=none -o publish/osx-arm64
-dotnet publish -c Release -r osx-x64   --self-contained true -p:Version=1.2.0 -p:DebugType=none -o publish/osx-x64
+dotnet publish -c Release -r linux-x64 --self-contained true -p:Version=1.4.0 -p:DebugType=none -o publish/linux-x64
+dotnet publish -c Release -r osx-arm64 --self-contained true -p:Version=1.4.0 -p:DebugType=none -o publish/osx-arm64
+dotnet publish -c Release -r osx-x64   --self-contained true -p:Version=1.4.0 -p:DebugType=none -o publish/osx-x64
 ```
 
 Every target can be built on any of the three systems. If the project sits on a network drive whose clock differs from yours, build with `--no-incremental` so no change is skipped.
@@ -242,7 +244,7 @@ The filter rules have their own tests, which feed made-up key presses and clicks
 dotnet run --project tests/EngineTests
 ```
 
-For automated tests of the whole app, the environment variable `PAXCG_ACCEPT_INJECTED=1` makes keystrokes created by test tools count as real ones, and `PAXCG_DATA_DIR` points the settings file somewhere else so your real settings are never touched.
+For automated tests of the whole app, the environment variable `PXDCG_ACCEPT_INJECTED=1` makes keystrokes created by test tools count as real ones, and `PXDCG_DATA_DIR` points the settings file somewhere else so your real settings are never touched.
 
 ## Code layout
 
@@ -265,9 +267,10 @@ For automated tests of the whole app, the environment variable `PAXCG_ACCEPT_INJ
 | `Services/SignInTask.cs` | The scheduled task that starts it as administrator at sign-in (Windows) |
 | `Views/SettingsWindow.axaml(.cs)` | The settings window |
 | `Views/MonitorWindow.axaml(.cs)` | The chatter monitor |
-| `Views/Chrome.cs` | Puts the PAX title bar on each window and remembers where it was |
-| `PaxStandard.cs` | Shared with the other PAX apps: the title bar, remembered window placement, and the PAX Toolkit link (`%APPDATA%\PAX\toolkit.json`) |
-| `Services/TrayLink.cs` | Shows or hides the tray icon as PAX Toolkit or the settings say, live |
+| `Views/Chrome.cs` | Puts the pxd title bar on each window and remembers where it was |
+| `pxdStandard.cs` | Shared with the other pxd apps: the title bar, remembered window placement, the pxd Toolkit link (`%APPDATA%\pxd\toolkit.json`), and the one-time move from the app's former name |
+| `Services/Migration.cs` | First start after the rename: moves the settings folder and the startup entry or task to the new name |
+| `Services/TrayLink.cs` | Shows or hides the tray icon as pxd Toolkit or the settings say, live |
 | `Services/SingleInstance.cs` | A second start opens the running copy's window |
 | `SpadeIcon.cs` | The app and tray icon, drawn in code |
 | `tests/EngineTests/` | Tests for the filter rules, and the sign-in task's definition |

@@ -4,7 +4,7 @@ using ShapePath = Avalonia.Controls.Shapes.Path;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 
-namespace PaxChatterGuard;
+namespace pxdChatterGuard;
 
 /// <summary>The app's X mark, drawn from vector geometry so it stays crisp at every size.</summary>
 public static class SpadeIcon

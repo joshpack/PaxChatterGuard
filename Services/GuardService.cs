@@ -1,7 +1,7 @@
-using PaxChatterGuard.Core;
-using PaxChatterGuard.Platform;
+using pxdChatterGuard.Core;
+using pxdChatterGuard.Platform;
 
-namespace PaxChatterGuard.Services;
+namespace pxdChatterGuard.Services;
 
 /// <summary>
 /// Holds the filter together: the engine, the operating-system backend and the settings, and the on/off state.
@@ -160,7 +160,7 @@ public sealed class GuardService : IDisposable
     public void ApplyConfig()
     {
         // Only testing sets this: it lets keystrokes created by test tools count as real ones.
-        var acceptInjected = Environment.GetEnvironmentVariable("PAXCG_ACCEPT_INJECTED") == "1";
+        var acceptInjected = Environment.GetEnvironmentVariable("PXDCG_ACCEPT_INJECTED") == "1";
         Engine.Config = Settings.ToConfig(ignoreInjected: !acceptInjected, holdSafeSupported: Backend.SupportsHoldSafe,
             mouseSupported: Backend.SupportsMouse);
         Backend.SetMouseFilter(Engine.Config.FilterMouse); // the mouse is only watched while its filter is on

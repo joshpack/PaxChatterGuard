@@ -4,9 +4,9 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-using PaxChatterGuard.Core;
+using pxdChatterGuard.Core;
 
-namespace PaxChatterGuard.Platform;
+namespace pxdChatterGuard.Platform;
 
 /// <summary>
 /// Windows: a low-level keyboard hook (WH_KEYBOARD_LL) on its own thread with its own message loop. The hook callback does
@@ -234,9 +234,9 @@ public sealed unsafe class WindowsBackend : IKeyboardBackend
         try
         {
             _wndProc = RawWndProc;
-            var cls = new WNDCLASS { lpfnWndProc = _wndProc, hInstance = GetModuleHandle(null), lpszClassName = "PaxChatterGuardRaw" };
+            var cls = new WNDCLASS { lpfnWndProc = _wndProc, hInstance = GetModuleHandle(null), lpszClassName = "pxdChatterGuardRaw" };
             RegisterClass(ref cls);
-            _rawWindow = CreateWindowEx(0, "PaxChatterGuardRaw", "", 0, 0, 0, 0, 0, new IntPtr(-3) /* HWND_MESSAGE */, IntPtr.Zero, cls.hInstance, IntPtr.Zero);
+            _rawWindow = CreateWindowEx(0, "pxdChatterGuardRaw", "", 0, 0, 0, 0, 0, new IntPtr(-3) /* HWND_MESSAGE */, IntPtr.Zero, cls.hInstance, IntPtr.Zero);
             if (_rawWindow == IntPtr.Zero)
                 return;
 

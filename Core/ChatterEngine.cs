@@ -1,4 +1,4 @@
-namespace PaxChatterGuard.Core;
+namespace pxdChatterGuard.Core;
 
 /// <summary>What to do with a keyboard event.</summary>
 public enum Verdict

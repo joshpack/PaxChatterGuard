@@ -5,12 +5,12 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
-using PaxChatterGuard.Core;
-using PaxChatterGuard.Services;
+using pxdChatterGuard.Core;
+using pxdChatterGuard.Services;
 using Ellipse = Avalonia.Controls.Shapes.Ellipse;
 using Path = Avalonia.Controls.Shapes.Path;
 
-namespace PaxChatterGuard.Views;
+namespace pxdChatterGuard.Views;
 
 /// <summary>
 /// The chatter monitor: every press that looked like chatter, newest first, blocked or not, with its timing and a button to
@@ -45,7 +45,7 @@ public partial class MonitorWindow : Window
         Icon = SpadeIcon.CreateWindowIcon();
         Chrome.UseBrandMark(Ctl<Path>("Spade"));
         if (OperatingSystem.IsWindows() && Platform.Elevation.IsElevated)
-            Title = "Chatter Monitor — PAX Chatter Guard (administrator)";
+            Title = "Chatter Monitor — pxd Chatter Guard (administrator)";
 
         Ctl<CheckBox>("CloseCallsBox").IsCheckedChanged += (_, _) => ApplyVisibility();
         Ctl<CheckBox>("TopmostBox").IsCheckedChanged += (_, _) => Topmost = Ctl<CheckBox>("TopmostBox").IsChecked == true;

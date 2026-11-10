@@ -1,6 +1,6 @@
 using Avalonia;
 
-namespace PaxChatterGuard;
+namespace pxdChatterGuard;
 
 internal static class Program
 {
@@ -42,6 +42,9 @@ internal static class Program
             return;
         }
 
+        // First start after the rename: settings folder and start-at-sign-in move to the new name before anything reads them.
+        Services.Migration.Run();
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 
@@ -62,7 +65,7 @@ internal static class Program
     /// </summary>
     private static bool AcquireSingleInstance(TimeSpan wait)
     {
-        var path = Path.Combine(Path.GetTempPath(), "PaxChatterGuard.instance.lock");
+        var path = Path.Combine(Path.GetTempPath(), "pxdChatterGuard.instance.lock");
         var until = DateTime.UtcNow + wait;
         while (true)
         {

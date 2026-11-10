@@ -1,10 +1,10 @@
 using Avalonia.Threading;
-using PaxStandard;
+using pxdStandard;
 
-namespace PaxChatterGuard.Services;
+namespace pxdChatterGuard.Services;
 
 /// <summary>
-/// The PAX Toolkit link for the tray icon: whether it shows comes from toolkit.json (PAX Toolkit or this app's own
+/// The pxd Toolkit link for the tray icon: whether it shows comes from toolkit.json (pxd Toolkit or this app's own
 /// "Show tray icon" switch), and a change to that file shows or hides the icon live.
 /// </summary>
 public sealed class TrayLink : IDisposable
@@ -18,10 +18,10 @@ public sealed class TrayLink : IDisposable
     {
         _appId = appId;
         _apply = apply;
-        Visible = PaxLink.TrayIconVisible(appId);
+        Visible = pxdLink.TrayIconVisible(appId);
         try
         {
-            _watch = PaxLink.Watch(() => Dispatcher.UIThread.Post(Refresh));
+            _watch = pxdLink.Watch(() => Dispatcher.UIThread.Post(Refresh));
         }
         catch
         {
@@ -31,17 +31,17 @@ public sealed class TrayLink : IDisposable
 
     public bool Visible { get; private set; }
 
-    /// <summary>The app's own switch: writes toolkit.json (so PAX Toolkit shows the same) and applies it. UI thread.</summary>
+    /// <summary>The app's own switch: writes toolkit.json (so pxd Toolkit shows the same) and applies it. UI thread.</summary>
     public void Set(bool visible)
     {
-        PaxLink.SetTrayIconVisible(_appId, visible);
+        pxdLink.SetTrayIconVisible(_appId, visible);
         Refresh();
     }
 
     /// <summary>Reads toolkit.json again and applies a change. UI thread.</summary>
     public void Refresh()
     {
-        var v = PaxLink.TrayIconVisible(_appId);
+        var v = pxdLink.TrayIconVisible(_appId);
         if (v == Visible)
             return;
         Visible = v;

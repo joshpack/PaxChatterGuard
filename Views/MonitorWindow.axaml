@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="PaxChatterGuard.Views.MonitorWindow"
-        Title="Chatter Monitor — PAX Chatter Guard"
+        x:Class="pxdChatterGuard.Views.MonitorWindow"
+        Title="Chatter Monitor — pxd Chatter Guard"
         Width="580" Height="698" MinWidth="460" MinHeight="420"
         WindowStartupLocation="CenterScreen">
 
