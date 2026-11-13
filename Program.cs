@@ -32,7 +32,7 @@ internal static class Program
         // also runs when started as administrator by the sign-in task or "Restart as administrator": that copy can update
         // its own folder and restarts with the same arguments. --safe-test runs are for trying changes, so they never update.
         if (UpdatesBeforeStart(args)
-            && pxdStandard.pxdUpdate.BeforeStart("joshpack/pxdChatterGuard", @"^pxdChatterGuard-.*-win-x64\.zip$", args))
+            && pxdStandard.pxdUpdate.BeforeStart("pxdtek/pxdChatterGuard", @"^pxdChatterGuard-.*-win-x64\.zip$", args))
             return;
 
         for (var i = 0; i < args.Length; i++)

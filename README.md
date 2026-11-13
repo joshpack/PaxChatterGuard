@@ -27,7 +27,7 @@ When a key goes down again only a few milliseconds after it was released, that i
 - **Leaves other input alone.** Keystrokes that programs create (macros, remote desktop, on-screen keyboards, input methods) pass through untouched.
 - **Light.** The windows only exist while they are open. Sitting in the tray it uses about 13 MB of memory and no CPU while you aren't typing (or, with mouse buttons filtered, using the mouse). The monitor's log is a small fixed buffer in memory that is never saved.
 - **Start when I sign in**, optional. Running as administrator, it starts as administrator at sign-in too, without Windows asking each time.
-- **Works with [pxd Toolkit](https://github.com/joshpack/pxdToolkit).** Its tray icon can be turned off and on there (or with **Show tray icon** in the settings; both stay in sync). With the icon hidden the filter keeps running, and starting the app again, or opening it from pxd Toolkit, brings the window back. Every window has the same dark pxd title bar and opens where you last left it, at the same size.
+- **Works with [pxd Toolkit](https://github.com/pxdtek/pxdToolkit).** Its tray icon can be turned off and on there (or with **Show tray icon** in the settings; both stay in sync). With the icon hidden the filter keeps running, and starting the app again, or opening it from pxd Toolkit, brings the window back. Every window has the same dark pxd title bar and opens where you last left it, at the same size.
 
 <p align="center">
   <img src="docs/screenshots/monitor.png" width="560" alt="The chatter monitor: totals for blocked, got through, not filtered and close calls, then a list of keys such as I blocked 5 ms after letting go, D got through with a 4 ms press and an Add to list · 46 ms button, and Space blocked with a Was me button">
@@ -97,31 +97,31 @@ Whether a program runs as administrator is read from its access token. A program
 
 ## Install
 
-Download from **[the latest release](https://github.com/joshpack/pxdChatterGuard/releases/latest)**. Every file has a `.sha256` next to it for checking the download.
+Download from **[the latest release](https://github.com/pxdtek/pxdChatterGuard/releases/latest)**. Every file has a `.sha256` next to it for checking the download.
 
 | File | For |
 | --- | --- |
-| `pxdChatterGuard-1.4.1-win-x64.zip` | Windows 10/11, 64-bit. Needs the .NET 10 Runtime. |
-| `pxdChatterGuard-1.4.1-linux-x64.tar.gz` | Linux, 64-bit. **Untested.** Self-contained, nothing else to install. |
-| `pxdChatterGuard-1.4.1-osx-arm64.tar.gz` | Mac with Apple Silicon. **Untested.** Self-contained. |
-| `pxdChatterGuard-1.4.1-osx-x64.tar.gz` | Mac with an Intel processor. **Untested.** Self-contained. |
+| `pxdChatterGuard-1.4.2-win-x64.zip` | Windows 10/11, 64-bit. Needs the .NET 10 Runtime. |
+| `pxdChatterGuard-1.4.2-linux-x64.tar.gz` | Linux, 64-bit. **Untested.** Self-contained, nothing else to install. |
+| `pxdChatterGuard-1.4.2-osx-arm64.tar.gz` | Mac with Apple Silicon. **Untested.** Self-contained. |
+| `pxdChatterGuard-1.4.2-osx-x64.tar.gz` | Mac with an Intel processor. **Untested.** Self-contained. |
 
 ### Windows
 
 1. Install the **[.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)** (x64) if you don't have it. The plain ".NET Runtime" is enough; the ".NET Desktop Runtime" includes it, so that works too.
-2. Unzip `pxdChatterGuard-1.4.1-win-x64.zip` somewhere permanent, for example into `%LOCALAPPDATA%`. It contains one folder, `pxdChatterGuard`. Your settings live elsewhere and are kept when it updates.
+2. Unzip `pxdChatterGuard-1.4.2-win-x64.zip` somewhere permanent, for example into `%LOCALAPPDATA%`. It contains one folder, `pxdChatterGuard`. Your settings live elsewhere and are kept when it updates.
 
    **Updates (Windows):** each time it starts (by hand, at sign-in, or as administrator through its sign-in task), it checks the latest release on GitHub first, for at most 4 seconds. If there's a newer one, it downloads it, checks its `.sha256`, replaces its own files and starts again with the same options. Offline or when GitHub is slow, it just opens. `--no-update` or the environment variable `PXD_NO_UPDATE=1` turns this off. A copy in a folder it can't write to (say `C:\Program Files` while not running as administrator) just opens. The Linux and macOS versions don't update themselves.
 3. Run `pxdChatterGuard.exe` from that folder. It doesn't need administrator rights, except to filter programs that themselves run as administrator (see [Programs that run as administrator](#programs-that-run-as-administrator)).
 
-The exe isn't code-signed, so SmartScreen may warn the first time: choose **More info → Run anyway**. To check the download in PowerShell: `Get-FileHash pxdChatterGuard-1.4.1-win-x64.zip` and compare it with the `.sha256` file.
+The exe isn't code-signed, so SmartScreen may warn the first time: choose **More info → Run anyway**. To check the download in PowerShell: `Get-FileHash pxdChatterGuard-1.4.2-win-x64.zip` and compare it with the `.sha256` file.
 
 ### Linux (untested)
 
 ```bash
-sha256sum -c pxdChatterGuard-1.4.1-linux-x64.tar.gz.sha256
+sha256sum -c pxdChatterGuard-1.4.2-linux-x64.tar.gz.sha256
 mkdir -p ~/.local/opt
-tar -xzf pxdChatterGuard-1.4.1-linux-x64.tar.gz -C ~/.local/opt
+tar -xzf pxdChatterGuard-1.4.2-linux-x64.tar.gz -C ~/.local/opt
 ~/.local/opt/pxdChatterGuard/pxdChatterGuard
 ```
 
@@ -146,9 +146,9 @@ The tray icon uses the StatusNotifier (AppIndicator) standard. KDE, Xfce, Cinnam
 ### macOS (untested)
 
 ```bash
-shasum -a 256 -c pxdChatterGuard-1.4.1-osx-arm64.tar.gz.sha256
+shasum -a 256 -c pxdChatterGuard-1.4.2-osx-arm64.tar.gz.sha256
 mkdir -p ~/Applications
-tar -xzf pxdChatterGuard-1.4.1-osx-arm64.tar.gz -C ~/Applications
+tar -xzf pxdChatterGuard-1.4.2-osx-arm64.tar.gz -C ~/Applications
 xattr -dr com.apple.quarantine ~/Applications/pxdChatterGuard   # it isn't signed or notarised
 ~/Applications/pxdChatterGuard/pxdChatterGuard
 ```
@@ -226,17 +226,17 @@ Main fields: `Enabled`, `GlobalMs` (the sensitivity), `Rules` (scancode → ms, 
 Needs the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ```bash
-git clone https://github.com/joshpack/pxdChatterGuard.git
+git clone https://github.com/pxdtek/pxdChatterGuard.git
 cd pxdChatterGuard
 dotnet run -- --safe-test 60          # try it; quits by itself after a minute
 
 # Windows (framework-dependent: needs the .NET 10 Runtime)
-dotnet publish -c Release -r win-x64 --self-contained false -p:Version=1.4.1 -p:DebugType=none -o publish/win-x64
+dotnet publish -c Release -r win-x64 --self-contained false -p:Version=1.4.2 -p:DebugType=none -o publish/win-x64
 
 # Linux and macOS (self-contained)
-dotnet publish -c Release -r linux-x64 --self-contained true -p:Version=1.4.1 -p:DebugType=none -o publish/linux-x64
-dotnet publish -c Release -r osx-arm64 --self-contained true -p:Version=1.4.1 -p:DebugType=none -o publish/osx-arm64
-dotnet publish -c Release -r osx-x64   --self-contained true -p:Version=1.4.1 -p:DebugType=none -o publish/osx-x64
+dotnet publish -c Release -r linux-x64 --self-contained true -p:Version=1.4.2 -p:DebugType=none -o publish/linux-x64
+dotnet publish -c Release -r osx-arm64 --self-contained true -p:Version=1.4.2 -p:DebugType=none -o publish/osx-arm64
+dotnet publish -c Release -r osx-x64   --self-contained true -p:Version=1.4.2 -p:DebugType=none -o publish/osx-x64
 ```
 
 Every target can be built on any of the three systems. If the project sits on a network drive whose clock differs from yours, build with `--no-incremental` so no change is skipped.

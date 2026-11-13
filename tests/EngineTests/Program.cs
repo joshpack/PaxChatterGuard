@@ -738,9 +738,9 @@ Test("no update check for --self-test or a bin\\ build", () =>
     Environment.SetEnvironmentVariable("PXD_UPDATE_API", "http://127.0.0.1:1");
     try
     {
-        Eq(false, pxdStandard.pxdUpdate.BeforeStart("joshpack/pxdChatterGuard", @"^pxdChatterGuard-.*-win-x64\.zip$", ["--self-test"]), "--self-test");
+        Eq(false, pxdStandard.pxdUpdate.BeforeStart("pxdtek/pxdChatterGuard", @"^pxdChatterGuard-.*-win-x64\.zip$", ["--self-test"]), "--self-test");
         Eq(true, AppContext.BaseDirectory.Contains(@"\bin\", StringComparison.OrdinalIgnoreCase) || !OperatingSystem.IsWindows(), "tests run from bin");
-        Eq(false, pxdStandard.pxdUpdate.BeforeStart("joshpack/pxdChatterGuard", @"^pxdChatterGuard-.*-win-x64\.zip$", ["--minimized"]), "bin build");
+        Eq(false, pxdStandard.pxdUpdate.BeforeStart("pxdtek/pxdChatterGuard", @"^pxdChatterGuard-.*-win-x64\.zip$", ["--minimized"]), "bin build");
     }
     finally
     {
@@ -769,6 +769,26 @@ Test("no update while another copy of the same exe runs", () =>
     {
         try { other.Kill(); } catch { }
     }
+});
+
+Test("pxdtek.com is asked first, with GitHub (pxdtek) as the fallback", () =>
+{
+    var saved = Environment.GetEnvironmentVariable("PXD_UPDATE_API");
+    Environment.SetEnvironmentVariable("PXD_UPDATE_API", null);
+    try
+    {
+        Eq("https://pxdtek.com/gh|https://api.github.com", string.Join("|", pxdStandard.pxdUpdate.ApiBases()), "release info: pxdtek.com, then GitHub");
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("PXD_UPDATE_API", saved);
+    }
+
+    Eq("https://github.com/pxdtek/pxdChatterGuard/releases/download/v1.4.2/pxdChatterGuard-1.4.2-win-x64.zip",
+        pxdStandard.pxdUpdate.GitHubCopy("https://pxdtek.com/dl/pxdChatterGuard/v1.4.2/pxdChatterGuard-1.4.2-win-x64.zip"), "download: GitHub's copy of a pxdtek.com file");
+    Eq("https://github.com/pxdtek/pxdChatterGuard/releases/download/v1.4.2/pxdChatterGuard-1.4.2-win-x64.zip.sha256",
+        pxdStandard.pxdUpdate.GitHubCopy("https://pxdtek.com/dl/pxdChatterGuard/v1.4.2/pxdChatterGuard-1.4.2-win-x64.zip.sha256"), "checksum: GitHub's copy");
+    Eq(true, pxdStandard.pxdUpdate.GitHubCopy("http://127.0.0.1:1/zip") is null, "anything else has no fallback");
 });
 
 Test("a newer release replaces the app's files once its checksum matches", () =>
@@ -802,12 +822,17 @@ Test("a newer release replaces the app's files once its checksum matches", () =>
             try { ctx = await listener.GetContextAsync(); } catch { return; }
             byte[] body = ctx.Request.Url!.AbsolutePath switch
             {
-                "/repos/joshpack/pxdChatterGuard/releases/latest" => System.Text.Encoding.UTF8.GetBytes(
+                "/repos/pxdtek/pxdChatterGuard/releases/latest" => System.Text.Encoding.UTF8.GetBytes(
                     $"{{\"tag_name\":\"v9.0.0\",\"assets\":[{{\"name\":\"pxdChatterGuard-9.0.0-linux-x64.tar.gz\",\"browser_download_url\":\"{prefix}tar\"}},{{\"name\":\"{asset}\",\"browser_download_url\":\"{prefix}zip\"}},{{\"name\":\"{asset}.sha256\",\"browser_download_url\":\"{prefix}sum\"}}]}}"),
                 "/zip" => File.ReadAllBytes(zip),
                 "/sum" => System.Text.Encoding.ASCII.GetBytes((badSum ? new string('0', 64) : hash) + "  " + asset),
+                // A web filter's block page, served in place of the release info or the download.
+                "/blocked/repos/pxdtek/pxdChatterGuard/releases/latest" or "/html" =>
+                    System.Text.Encoding.UTF8.GetBytes("<!DOCTYPE html><html><body><h1>Blocked by your network</h1></body></html>"),
                 _ => [],
             };
+            if (ctx.Request.Url.AbsolutePath is "/html" or "/blocked/repos/pxdtek/pxdChatterGuard/releases/latest")
+                ctx.Response.ContentType = "text/html";
             ctx.Response.StatusCode = body.Length == 0 ? 404 : 200;
             await ctx.Response.OutputStream.WriteAsync(body);
             ctx.Response.Close();
@@ -818,12 +843,21 @@ Test("a newer release replaces the app's files once its checksum matches", () =>
     try
     {
         const string pattern = @"^pxdChatterGuard-.*-win-x64\.zip$";
-        var plan = pxdStandard.pxdUpdate.FindUpdateAsync("joshpack/pxdChatterGuard", pattern, new Version(1, 4, 1)).GetAwaiter().GetResult();
+        var plan = pxdStandard.pxdUpdate.FindUpdateAsync("pxdtek/pxdChatterGuard", pattern, new Version(1, 4, 1)).GetAwaiter().GetResult();
         Eq(prefix + "zip", plan?.Zip, "the Windows zip is picked");
         Eq(prefix + "sum", plan?.Sum, "with its checksum");
-        Eq(true, pxdStandard.pxdUpdate.FindUpdateAsync("joshpack/pxdChatterGuard", pattern, new Version(9, 0, 0)).GetAwaiter().GetResult() is null, "current copy: nothing to do");
+        Eq(true, pxdStandard.pxdUpdate.FindUpdateAsync("pxdtek/pxdChatterGuard", pattern, new Version(9, 0, 0)).GetAwaiter().GetResult() is null, "current copy: nothing to do");
 
         var exe = Path.Combine(app, "pxdChatterGuard.exe");
+
+        // A block page is never taken for the real thing: not as release info, not as the download.
+        Environment.SetEnvironmentVariable("PXD_UPDATE_API", prefix + "blocked");
+        Eq(true, pxdStandard.pxdUpdate.FindUpdateAsync("pxdtek/pxdChatterGuard", pattern, new Version(1, 4, 1)).GetAwaiter().GetResult() is null, "block page as release info: no update");
+        Environment.SetEnvironmentVariable("PXD_UPDATE_API", prefix.TrimEnd('/'));
+        Eq(false, pxdStandard.pxdUpdate.ApplyAsync(prefix + "html", null, app, exe, ["--minimized"], start: false).GetAwaiter().GetResult(), "block page as the download: refused");
+        Eq("old exe", File.ReadAllText(exe), "block page: nothing changed");
+        Eq(false, File.Exists(Path.Combine(app, "extra.dll")), "block page: nothing added");
+
         badSum = true;
         Eq(false, pxdStandard.pxdUpdate.ApplyAsync(plan!.Value.Zip, plan.Value.Sum, app, exe, ["--minimized"], start: false).GetAwaiter().GetResult(), "bad checksum refused");
         Eq("old exe", File.ReadAllText(exe), "nothing changed");
